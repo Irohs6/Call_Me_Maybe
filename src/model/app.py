@@ -2,7 +2,7 @@ from pathlib import Path
 
 from pydantic import BaseModel
 
-from .models import FunctionDefinition, PromptDefinition
+from .models import Function, Prompt
 from .parser import JsonParser
 
 
@@ -29,8 +29,12 @@ class Application(BaseModel):
 
     def _display_loaded_data(
         self,
-        functions: list[FunctionDefinition],
-        prompts: list[PromptDefinition],
+        functions: list[Function],
+        prompts: list[Prompt],
     ) -> None:
         print(f"Functions: {len(functions)}")
         print(f"Prompts: {len(prompts)}")
+        for function in functions:
+            print(function.model_dump_json(indent=2))
+        for prompt in prompts:
+            print(prompt.model_dump_json(indent=2))

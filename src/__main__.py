@@ -1,7 +1,8 @@
 from argparse import ArgumentParser
 from pathlib import Path
 
-from .app import Application
+from .model.app import Application
+from .model.context_builder import ContextBuilder
 
 
 def main() -> None:
@@ -41,6 +42,9 @@ def main() -> None:
 
     try:
         app.run()
+        context_builder = ContextBuilder(functions=app.functions)
+        context = context_builder.build()
+        print(context)
 
     except ValueError as error:
         print(f"Error: {error}")

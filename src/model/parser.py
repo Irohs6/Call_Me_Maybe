@@ -3,20 +3,7 @@ from pathlib import Path
 
 from pydantic import BaseModel, ValidationError
 
-
-class TypeDefinition(BaseModel):
-    type: str
-
-
-class FunctionDefinition(BaseModel):
-    name: str
-    description: str
-    parameters: dict[str, TypeDefinition]
-    returns: TypeDefinition
-
-
-class PromptDefinition(BaseModel):
-    prompt: str
+from .models import Function, Prompt
 
 
 class JsonParser(BaseModel):
@@ -44,7 +31,7 @@ class JsonParser(BaseModel):
 
     def load_functions(
             self,
-            path: Path) -> list[FunctionDefinition]:
+            path: Path) -> list[Function]:
         data = self._load(path)
 
         if not isinstance(data, list):
@@ -54,7 +41,7 @@ class JsonParser(BaseModel):
 
         try:
             return [
-                FunctionDefinition.model_validate(item)
+                Function.model_validate(item)
                 for item in data
             ]
 
@@ -66,7 +53,7 @@ class JsonParser(BaseModel):
     def load_prompts(
         self,
         path: Path,
-    ) -> list[PromptDefinition]:
+    ) -> list[Prompt]:
         data = self._load(path)
 
         if not isinstance(data, list):
@@ -76,7 +63,7 @@ class JsonParser(BaseModel):
 
         try:
             return [
-                PromptDefinition.model_validate(item)
+                Prompt.model_validate(item)
                 for item in data
             ]
 
