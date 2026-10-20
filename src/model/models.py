@@ -5,6 +5,8 @@ from pydantic import ConfigDict
 class Type(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+    type: str
+
 
 class Function(BaseModel):
     model_config = ConfigDict(extra="forbid")

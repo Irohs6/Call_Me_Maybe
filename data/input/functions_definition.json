@@ -1,7 +1,7 @@
 [
   {
-    "name": "fn_add_numbers",
-    "description": "Add two numbers together and return their sum.",
+    "name": "bv_add_numbers",
+    "description": "Add.",
     "parameters": {
       "a": {
         "type": "number"
@@ -15,7 +15,7 @@
     }
   },
   {
-    "name": "fn_greet",
+    "name": "sa_greet",
     "description": "Generate a greeting message for a person by name.",
     "parameters": {
       "name": {

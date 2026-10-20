@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from .models import Function, Prompt
 from .parser import JsonParser
@@ -10,21 +10,23 @@ class Application(BaseModel):
     functions_path: Path
     input_path: Path
     output_path: Path
+    functions: list[Function] = Field(default_factory=list)
+    prompts: list[Prompt] = Field(default_factory=list)
 
     def run(self) -> None:
         parser = JsonParser()
 
-        functions = parser.load_functions(
+        self.functions = parser.load_functions(
             self.functions_path
         )
 
-        prompts = parser.load_prompts(
+        self.prompts = parser.load_prompts(
             self.input_path
         )
 
         self._display_loaded_data(
-            functions,
-            prompts,
+            self.functions,
+            self.prompts,
         )
 
     def _display_loaded_data(
@@ -34,7 +36,3 @@ class Application(BaseModel):
     ) -> None:
         print(f"Functions: {len(functions)}")
         print(f"Prompts: {len(prompts)}")
-        for function in functions:
-            print(function.model_dump_json(indent=2))
-        for prompt in prompts:
-            print(prompt.model_dump_json(indent=2))

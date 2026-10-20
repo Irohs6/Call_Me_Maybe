@@ -1,5 +1,6 @@
 import json
 from pathlib import Path
+from json.decoder import JSONDecodeError
 
 from pydantic import BaseModel, ValidationError
 
@@ -15,13 +16,15 @@ class JsonParser(BaseModel):
                 return json.load(file)
 
         except FileNotFoundError as error:
-            raise ValueError(
+            raise FileNotFoundError(
                 f"File not found: {path}"
             ) from error
 
         except json.JSONDecodeError as error:
-            raise ValueError(
-                f"Invalid JSON: {path}"
+            raise JSONDecodeError(
+                f"Invalid JSON: {path}",
+                doc=error.doc,
+                pos=error.pos
             ) from error
 
         except UnicodeDecodeError as error:
