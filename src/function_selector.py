@@ -21,11 +21,12 @@ class FunctionSelector:
 
         generated_ids: list[int] = []
 
+        candidates = function_tokens.copy()
         while True:
             position = len(generated_ids)
             allowed_ids: list[int] = []
 
-            for tokens in function_tokens.values():
+            for tokens in candidates.values():
                 if len(tokens) > position:
                     token_id = tokens[position]
                     if token_id not in allowed_ids:

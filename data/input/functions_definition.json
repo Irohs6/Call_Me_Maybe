@@ -1,6 +1,6 @@
 [
   {
-    "name": "bv_add_numbers",
+    "name": "fn_add_numbers",
     "description": "Add.",
     "parameters": {
       "a": {
@@ -15,7 +15,7 @@
     }
   },
   {
-    "name": "sa_greet",
+    "name": "fn_greet",
     "description": "Generate a greeting message for a person by name.",
     "parameters": {
       "name": {
