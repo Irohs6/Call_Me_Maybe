@@ -75,10 +75,18 @@ def main() -> None:
             selected_function = function_selector.select(context)
 
             print(
-                f"{GREEN}Selected Function for Context {i}:"
+                f"{GREEN}for Context {i}:"
                 f"{RESET} {YELLOW}{selected_function}{RESET}"
             )
 
+            final_selection = function_selector.final_selection(
+                prompt,
+                selected_function,
+            )
+            print(
+                f"{GREEN}Final selection for function '{selected_function.name}':"
+                f"{RESET} {YELLOW}{final_selection}{RESET}"
+            )
     except (ValueError, FileNotFoundError, JSONDecodeError) as error:
         print(f"Error: {error}")
         return
