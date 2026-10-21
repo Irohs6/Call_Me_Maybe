@@ -3,12 +3,10 @@ from llm_sdk import Small_LLM_Model
 from .model.context_builder import ContextBuilder
 from .model.models import Prompt
 import json
+import re
 
 
 class FunctionSelector:
-
-    NUMBER_ALLOWED_CHARS = ["-", "0", "1", "2", "3", "4", "5", "6",
-                            "7", "8", "9", ".", "\n",]
 
     def __init__(
         self,
@@ -66,71 +64,57 @@ class FunctionSelector:
                     if function_tokens[function.name] == generated_ids:
                         return function
 
+    def extract_numbers(self, prompt: str) -> list[str]:
+        return re.findall(r"-?\d+(?:\.\d+)?", prompt)
+
+    def number_tokens_available(
+        self,
+        prompt: str,
+    ) -> dict[str, list[int]]:
+        number_tokens: dict[str, list[int]] = {}
+
+        for number in self.extract_numbers(prompt):
+            tokens = self.model.encode(number + "\n")[0].tolist()
+            number_tokens[number] = tokens
+
+        return number_tokens
+
     def generate_number(
         self,
         context_ids: list[int],
+        prompt: str,
     ) -> int | float:
+        number_tokens_ids: list[int] = self.number_tokens_available(prompt)
         generated_ids: list[int] = []
-        argument_progress: str = ""
 
-        number_token_ids: list[int] = []
-
-        for char in self.NUMBER_ALLOWED_CHARS:
-            token_ids = self.model.encode(char)[0].tolist()
-
-            if len(token_ids) != 1:
-                continue
-
-            number_token_ids.append(token_ids[0])
+        if not number_tokens_ids:
+            raise ValueError("No number found in prompt")
 
         while True:
+            position = len(generated_ids)
+
+            allowed_ids = self.allowed_ids_for_position(number_tokens_ids,
+                                                        position)
             logits = self.model.get_logits_from_input_ids(
                 context_ids + generated_ids
             )
-
-            allowed_ids: list[int] = []
-
-            for token_id in number_token_ids:
-                generation = self.model.decode([token_id])
-                candidate = argument_progress + generation
-
-                if candidate.count(".") >= 2:
-                    continue
-
-                if candidate.count("-") >= 2:
-                    continue
-
-                if "-" in candidate and not candidate.startswith("-"):
-                    continue
-
-                if generation == "\n":
-                    try:
-                        float(argument_progress)
-                    except ValueError:
-                        continue
-
-                allowed_ids.append(token_id)
-
-            if not allowed_ids:
-                raise ValueError("Cannot generate a valid number")
 
             next_token_id = max(
                 allowed_ids,
                 key=lambda token_id: logits[token_id],
             )
 
-            generation = self.model.decode([next_token_id])
-            print(
-                "generated:",
-                repr(generation),
-                "progress:",
-                repr(argument_progress),
-            )
-            if generation == "\n":
-                return float(argument_progress)
-
-            argument_progress += generation
             generated_ids.append(next_token_id)
+
+            number_tokens_ids = {
+                number: tokens
+                for number, tokens in number_tokens_ids.items()
+                if tokens[:len(generated_ids)] == generated_ids
+            }
+
+            for number, tokens in number_tokens_ids.items():
+                if tokens == generated_ids:
+                    return float(number)
 
     def final_selection(
         self,
@@ -156,7 +140,7 @@ class FunctionSelector:
             type_ = function.parameters[parameter].type
 
             if type_ == "number":
-                value = self.generate_number(context_ids)
+                value = self.generate_number(context_ids, prompt.prompt)
                 values[parameter] = value
 
         return values
