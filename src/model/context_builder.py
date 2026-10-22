@@ -58,25 +58,23 @@ class ContextBuilder(BaseModel):
         context += f"Function: {function.name}\n"
         context += f"Description: {function.description}\n"
 
-        context += "Function parameters:\n"
+        context += "Function signature: "
+        context += f"{function.name}("
 
-        parameters = list(function.parameters)
+        parameters = []
 
-        for name in parameters:
-            context += (
-                f"- {name}: {function.parameters[name].type}\n"
-            )
+        for name, definition in function.parameters.items():
+            parameters.append(f"{name}: {definition.type}")
 
-        position = parameters.index(parameter) + 1
+        context += ", ".join(parameters)
+        context += ")\n"
 
-        context += (
-            f"\nCurrent parameter: {parameter}\n"
-            f"Parameter position: {position} of {len(parameters)}\n"
-            f"Type: {function.parameters[parameter].type}\n"
-            f"Extract the value of parameter '{parameter}' "
-            f"from the original prompt.\n"
-            "Value:\n"
-        )
+        context += "Arguments already generated:\n"
+
+        for name, value in values.items():
+            context += f"{name}={value}\n"
+
+        context += f"{parameter}="
 
         return context
 
@@ -108,6 +106,9 @@ class ContextBuilder(BaseModel):
             "Do NOT execute the function.\n"
             "Do NOT return the result of the function.\n"
             "Do NOT transform the input value.\n"
+            "Do not repeat a previous argument unless the request requires it.\n"
+            "Output only the raw argument value.\n"
+            "Do not add surrounding quotes.\n"
             "Return only the value that must be passed to this parameter.\n"
             "Do not explain.\n"
             "Do not add a label.\n"

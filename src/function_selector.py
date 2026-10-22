@@ -215,17 +215,17 @@ class FunctionSelector:
 
         for parameter in function.parameters:
             type_ = function.parameters[parameter].type
-            if type_ == "number":
-                parameter_context: str = (
-                    context_builder.build_parameter_context(
-                        prompt,
-                        function,
-                        parameter,
-                        values=values,
-                    )
-                )
+            parameter_context = context_builder.build_parameter_context(
+                prompt,
+                function,
+                parameter,
+                values,
+            )
 
-                context_ids = self.model.encode(parameter_context)[0].tolist()
+            context_ids = self.model.encode(
+                parameter_context
+            )[0].tolist()
+            if type_ == "number":
 
                 value = self.generate_number(
                     context_ids, prompt.prompt, number_tokens
@@ -233,16 +233,6 @@ class FunctionSelector:
                 values[parameter] = value
                 print(f"Generated number for parameter '{parameter}': {value}")
             elif type_ == "string":
-                parameter_context: str = (
-                    context_builder.build_string_parameter_context(
-                        prompt,
-                        function,
-                        parameter,
-                        values
-                    )
-                )
-
-                context_ids = self.model.encode(parameter_context)[0].tolist()
 
                 value = self.generate_free_string(context_ids)
                 values[parameter] = value
