@@ -36,7 +36,8 @@ class ContextBuilder(BaseModel):
             "Choose the single function that should be called to satisfy "
             "the user request.\n"
             "Choose based on the requested operation and the function "
-            "description, not only on words or values appearing in the request.\n"
+            "description, not only on words or values "
+            "appearing in the request.\n"
             "Do not execute the function.\n"
             "Do not generate parameter values.\n"
             "Output only the exact function name.\n"
@@ -75,45 +76,5 @@ class ContextBuilder(BaseModel):
             context += f"{name}={value}\n"
 
         context += f"{parameter}="
-
-        return context
-
-    def build_string_parameter_context(
-        self,
-        prompt: Prompt,
-        function: Function,
-        parameter: str,
-        values: dict[str, object],
-    ) -> str:
-        context = ""
-
-        context += f"User prompt: {prompt.prompt}\n"
-        context += f"Selected function: {function.name}\n"
-        context += f"Function description: {function.description}\n"
-
-        context += "Function parameters:\n"
-        for name, parameter_type in function.parameters.items():
-            context += f"- {name}: {parameter_type.type}\n"
-
-        if values:
-            context += "Parameters already extracted:\n"
-            for name, value in values.items():
-                context += f"- {name}: {value}\n"
-
-        context += (
-            f"\nCurrent parameter to extract: {parameter}\n"
-            "You are extracting an INPUT argument for the function.\n"
-            "Do NOT execute the function.\n"
-            "Do NOT return the result of the function.\n"
-            "Do NOT transform the input value.\n"
-            "Do not repeat a previous argument unless the request requires it.\n"
-            "Output only the raw argument value.\n"
-            "Do not add surrounding quotes.\n"
-            "Return only the value that must be passed to this parameter.\n"
-            "Do not explain.\n"
-            "Do not add a label.\n"
-            "End after the value with a newline.\n"
-            "Value:"
-        )
 
         return context

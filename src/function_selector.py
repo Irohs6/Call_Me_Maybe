@@ -1,8 +1,9 @@
-from .model.models import Function
-from llm_sdk import Small_LLM_Model
-from .model.context_builder import ContextBuilder
-from .model.models import Prompt
 import re
+
+from llm_sdk import Small_LLM_Model
+
+from .model.context_builder import ContextBuilder
+from .model.models import Function, Prompt
 
 
 class FunctionSelector:
@@ -11,115 +12,143 @@ class FunctionSelector:
         self,
         model: Small_LLM_Model,
         functions: list[Function],
-    ):
+    ) -> None:
         self.model = model
         self.functions = functions
 
     def allowed_ids_for_position(
-        self, function_tokens: dict[str, list[int]], position: int
+        self,
+        function_tokens: dict[str, list[int]],
+        position: int,
     ) -> list[int]:
         allowed_ids: list[int] = []
+
         for tokens in function_tokens.values():
             if len(tokens) > position:
                 token_id = tokens[position]
+
                 if token_id not in allowed_ids:
                     allowed_ids.append(token_id)
+
         return allowed_ids
 
-    def token_function_available(self) -> dict[str, list[int]]:
+    def token_function_available(
+        self,
+    ) -> dict[str, list[int]]:
         function_tokens: dict[str, list[int]] = {}
+
         for function in self.functions:
-            tokens = self.model.encode(function.name + "\n")[0].tolist()
+            tokens = self.model.encode(
+                function.name + "\n"
+            )[0].tolist()
+
             function_tokens[function.name] = tokens
+
         return function_tokens
 
-    def select(self, context: str) -> Function:
-        context_ids = self.model.encode(context)[0].tolist()
+    def select(
+        self,
+        context: str,
+    ) -> Function:
+        context_ids = self.model.encode(
+            context
+        )[0].tolist()
+
         function_tokens = self.token_function_available()
         generated_ids: list[int] = []
+
         while True:
             position = len(generated_ids)
+
             allowed_ids = self.allowed_ids_for_position(
-                function_tokens, position
+                function_tokens,
+                position,
             )
+
             logits = self.model.get_logits_from_input_ids(
                 context_ids + generated_ids
             )
 
             next_token_id = max(
-                allowed_ids, key=lambda token_id: logits[token_id]
+                allowed_ids,
+                key=lambda token_id: logits[token_id],
             )
+
             generated_ids.append(next_token_id)
 
             function_tokens = {
                 name: tokens
                 for name, tokens in function_tokens.items()
-                if tokens[: len(generated_ids)] == generated_ids
+                if tokens[:len(generated_ids)] == generated_ids
             }
 
             for function in self.functions:
                 if function.name in function_tokens:
-                    if function_tokens[function.name] == generated_ids:
+                    if (
+                        function_tokens[function.name]
+                        == generated_ids
+                    ):
                         return function
 
-    def extract_numbers(self, prompt: str) -> list[str]:
-        return re.findall(r"-?\d+(?:\.\d+)?", prompt)
+    def extract_numbers(
+        self,
+        prompt: str,
+    ) -> list[str]:
+        return re.findall(
+            r"-?\d+(?:\.\d+)?",
+            prompt,
+        )
 
     def number_tokens_available(
         self,
         prompt: str,
-    ) -> dict[str, list[int]]:
-        number_tokens: dict[str, list[int]] = {}
+    ) -> dict[int, tuple[str, list[int]]]:
+        number_tokens: dict[
+            int,
+            tuple[str, list[int]]
+        ] = {}
 
-        for index, number in enumerate(self.extract_numbers(prompt)):
-            tokens = self.model.encode(number + "\n")[0].tolist()
-            number_tokens[index] = (number, tokens)
+        for index, number in enumerate(
+            self.extract_numbers(prompt)
+        ):
+            tokens = self.model.encode(
+                number + "\n"
+            )[0].tolist()
+
+            number_tokens[index] = (
+                number,
+                tokens,
+            )
 
         return number_tokens
-
-    def extract_strings(self, prompt: str) -> list[str]:
-        quoted_strings = re.findall(r"'([^']*)'|\"([^\"]*)\"", prompt)
-
-        strings: list[str] = []
-
-        for single_quote, double_quote in quoted_strings:
-            value = single_quote or double_quote
-            strings.append(value)
-
-        strings.extend(prompt.split())
-
-        return strings
-
-    def string_tokens_available(
-        self,
-        prompt: str,
-    ) -> dict[int, tuple[str, list[int]]]:
-        string_tokens: dict[int, tuple[str, list[int]]] = {}
-
-        for index, string in enumerate(self.extract_strings(prompt)):
-            tokens = self.model.encode(string + "\n")[0].tolist()
-            string_tokens[index] = (string, tokens)
-
-        return string_tokens
 
     def generate_number(
         self,
         context_ids: list[int],
-        prompt: str,
-        number_tokens: dict[int, tuple[str, list[int]]],
+        number_tokens: dict[
+            int,
+            tuple[str, list[int]]
+        ],
     ) -> int | float:
         candidates = number_tokens.copy()
         generated_ids: list[int] = []
 
         if not number_tokens:
-            raise ValueError("No number found in prompt")
+            raise ValueError(
+                "No number found in prompt"
+            )
 
         while True:
             position = len(generated_ids)
 
             allowed_ids = self.allowed_ids_for_position(
-                {k: v[1] for k, v in candidates.items()}, position
+                {
+                    str(key): value[1]
+                    for key, value in candidates.items()
+                },
+                position,
             )
+
             logits = self.model.get_logits_from_input_ids(
                 context_ids + generated_ids
             )
@@ -133,13 +162,18 @@ class FunctionSelector:
 
             candidates = {
                 index: (number, tokens)
-                for index, (number, tokens) in number_tokens.items()
-                if tokens[: len(generated_ids)] == generated_ids
+                for index, (number, tokens)
+                in candidates.items()
+                if (
+                    tokens[:len(generated_ids)]
+                    == generated_ids
+                )
             }
 
             for key, (number, tokens) in candidates.items():
                 if tokens == generated_ids:
                     number_tokens.pop(key)
+
                     return float(number)
 
     def generate_free_string(
@@ -160,47 +194,46 @@ class FunctionSelector:
 
             generated_ids.append(next_token_id)
 
-            argument_progress = self.model.decode(generated_ids)
+            argument_progress = self.model.decode(
+                generated_ids
+            )
 
             if "\n" in argument_progress:
-                return argument_progress.split("\n")[0]
+                return argument_progress.split(
+                    "\n"
+                )[0]
 
-    def generate_string(
+    def parameter_progress(
         self,
-        context_ids: list[int],
-        prompt: str,
-        string_tokens: dict[int, tuple[str, list[int]]],
+        values: dict[str, object],
+        parameter: str,
     ) -> str:
-        candidates = string_tokens.copy()
-        generated_ids: list[int] = []
+        progress: str = ""
 
-        while True:
-            position = len(generated_ids)
+        for name, value in values.items():
+            progress += f"{name}={value}\n"
 
-            allowed_ids = self.allowed_ids_for_position(
-                {k: v[1] for k, v in candidates.items()}, position
-            )
-            logits = self.model.get_logits_from_input_ids(
-                context_ids + generated_ids
-            )
+        progress += f"{parameter}="
 
-            next_token_id = max(
-                allowed_ids,
-                key=lambda token_id: logits[token_id],
-            )
+        return progress
 
-            generated_ids.append(next_token_id)
+    def chat_context_ids(
+        self,
+        context: str,
+        previous_gen: str,
+    ) -> list[int]:
+        chat_context = (
+            "<|im_start|>user\n"
+            f"{context}"
+            "<|im_end|>\n"
+            "<|im_start|>assistant\n"
+            "<think>\n\n</think>\n\n"
+            f"{previous_gen}"
+        )
 
-            candidates = {
-                index: (string, tokens)
-                for index, (string, tokens) in string_tokens.items()
-                if tokens[: len(generated_ids)] == generated_ids
-            }
-
-            for key, (string, tokens) in candidates.items():
-                if tokens == generated_ids:
-                    string_tokens.pop(key)
-                    return string
+        return self.model.encode(
+            chat_context
+        )[0].tolist()
 
     def final_selection(
         self,
@@ -208,34 +241,65 @@ class FunctionSelector:
         function: Function,
     ) -> dict[str, object]:
 
-        context_builder = ContextBuilder(functions=[function])
+        context_builder = ContextBuilder(
+            functions=[function]
+        )
 
         values: dict[str, object] = {}
-        number_tokens: list[int] = self.number_tokens_available(prompt.prompt)
+
+        number_tokens: dict[
+            int,
+            tuple[str, list[int]]
+        ] = self.number_tokens_available(
+            prompt.prompt
+        )
 
         for parameter in function.parameters:
-            type_ = function.parameters[parameter].type
-            parameter_context = context_builder.build_parameter_context(
-                prompt,
-                function,
-                parameter,
-                values,
+            type_ = (
+                function.parameters[parameter].type
+            )
+            parameter_context = (
+                context_builder.build_parameter_context(
+                    prompt,
+                    function,
+                    parameter,
+                    values,
+                )
             )
 
-            context_ids = self.model.encode(
-                parameter_context
-            )[0].tolist()
+            previous_gen = self.parameter_progress(
+                values,
+                parameter,
+            )
+
+            context_ids = self.chat_context_ids(
+                parameter_context,
+                previous_gen,
+            )
+
             if type_ == "number":
-
                 value = self.generate_number(
-                    context_ids, prompt.prompt, number_tokens
+                    context_ids,
+                    number_tokens,
                 )
-                values[parameter] = value
-                print(f"Generated number for parameter '{parameter}': {value}")
-            elif type_ == "string":
 
-                value = self.generate_free_string(context_ids)
                 values[parameter] = value
-                print(f"Generated string for parameter '{parameter}': {value}")
+
+                print(
+                    f"Generated number for parameter "
+                    f"'{parameter}': {value}"
+                )
+
+            elif type_ == "string":
+                value = self.generate_free_string(
+                    context_ids
+                )
+
+                values[parameter] = value
+
+                print(
+                    f"Generated string for parameter "
+                    f"'{parameter}': {value}"
+                )
 
         return values
