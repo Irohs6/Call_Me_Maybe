@@ -106,7 +106,7 @@ class FunctionSelector:
         self,
         context_ids: list[int],
         prompt: str,
-        number_tokens: dict[int, tuple[str, list[int]]]
+        number_tokens: dict[int, tuple[str, list[int]]],
     ) -> int | float:
         candidates = number_tokens.copy()
         generated_ids: list[int] = []
@@ -134,7 +134,7 @@ class FunctionSelector:
             candidates = {
                 index: (number, tokens)
                 for index, (number, tokens) in number_tokens.items()
-                if tokens[:len(generated_ids)] == generated_ids
+                if tokens[: len(generated_ids)] == generated_ids
             }
 
             for key, (number, tokens) in candidates.items():
@@ -148,8 +148,6 @@ class FunctionSelector:
     ) -> str:
         generated_ids: list[int] = []
 
-        end_id = self.model.encode("\n")[0].tolist()[0]
-
         while True:
             logits = self.model.get_logits_from_input_ids(
                 context_ids + generated_ids
@@ -160,22 +158,21 @@ class FunctionSelector:
                 key=lambda token_id: logits[token_id],
             )
 
-            if next_token_id == end_id:
-                return self.model.decode(generated_ids)
-
             generated_ids.append(next_token_id)
+
+            argument_progress = self.model.decode(generated_ids)
+
+            if "\n" in argument_progress:
+                return argument_progress.split("\n")[0]
 
     def generate_string(
         self,
         context_ids: list[int],
         prompt: str,
-        string_tokens: dict[int, tuple[str, list[int]]]
+        string_tokens: dict[int, tuple[str, list[int]]],
     ) -> str:
         candidates = string_tokens.copy()
         generated_ids: list[int] = []
-
-        if not string_tokens:
-            raise ValueError("No string found in prompt")
 
         while True:
             position = len(generated_ids)
@@ -197,7 +194,7 @@ class FunctionSelector:
             candidates = {
                 index: (string, tokens)
                 for index, (string, tokens) in string_tokens.items()
-                if tokens[:len(generated_ids)] == generated_ids
+                if tokens[: len(generated_ids)] == generated_ids
             }
 
             for key, (string, tokens) in candidates.items():
@@ -215,26 +212,38 @@ class FunctionSelector:
 
         values: dict[str, object] = {}
         number_tokens: list[int] = self.number_tokens_available(prompt.prompt)
-        string_tokens = self.string_tokens_available(prompt.prompt)
 
         for parameter in function.parameters:
-            parameter_context: str = context_builder.build_parameter_context(
-                prompt,
-                function,
-                parameter,
-                values=values,
-            )
-
-            context_ids = self.model.encode(parameter_context)[0].tolist()
-
             type_ = function.parameters[parameter].type
-
             if type_ == "number":
-                value = self.generate_number(context_ids, prompt.prompt,
-                                             number_tokens)
+                parameter_context: str = (
+                    context_builder.build_parameter_context(
+                        prompt,
+                        function,
+                        parameter,
+                        values=values,
+                    )
+                )
+
+                context_ids = self.model.encode(parameter_context)[0].tolist()
+
+                value = self.generate_number(
+                    context_ids, prompt.prompt, number_tokens
+                )
                 values[parameter] = value
                 print(f"Generated number for parameter '{parameter}': {value}")
             elif type_ == "string":
+                parameter_context: str = (
+                    context_builder.build_string_parameter_context(
+                        prompt,
+                        function,
+                        parameter,
+                        values
+                    )
+                )
+
+                context_ids = self.model.encode(parameter_context)[0].tolist()
+
                 value = self.generate_free_string(context_ids)
                 values[parameter] = value
                 print(f"Generated string for parameter '{parameter}': {value}")
