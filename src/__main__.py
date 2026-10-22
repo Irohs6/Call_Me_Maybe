@@ -5,7 +5,9 @@ from json.decoder import JSONDecodeError
 from .model.app import Application
 from .model.context_builder import ContextBuilder
 from .function_selector import FunctionSelector
+from .model.models import FunctionCall
 from llm_sdk import Small_LLM_Model
+import json
 
 GREEN = "\033[92m"
 CYAN = "\033[96m"
@@ -62,31 +64,26 @@ def main() -> None:
             functions=app.functions,
         )
 
+        results = []
         for i, prompt in enumerate(app.prompts, start=1):
             context = context_builder.build_with_prompt(prompt)
 
-            print(f"{GREEN}========== CONTEXT {i} =========={RESET}")
-            print(
-                f"{CYAN}Prompt:{RESET} "
-                f"{YELLOW}{prompt.prompt}{RESET}"
-            )
-            print(context)
-
             selected_function = function_selector.select(context)
-
-            print(
-                f"{GREEN}for Context {i}:"
-                f"{RESET} {YELLOW}{selected_function}{RESET}"
-            )
-
             final_selection = function_selector.final_selection(
                 prompt,
                 selected_function,
             )
-            print(
-                f"{GREEN}Final selection for function '{selected_function.name}':"
-                f"{RESET} {YELLOW}{final_selection}{RESET}"
+            function_call = FunctionCall(
+                prompt=prompt.prompt,
+                name=selected_function.name,
+                parameters=final_selection
             )
+            results.append(function_call)
+        output = [result.model_dump(mode="json") for result in results]
+        args.output.parent.mkdir(parents=True, exist_ok=True)
+        with args.output.open("w") as file:
+            json.dump(output, file, indent=4)
+        print(f"{CYAN}Dict answer final:{RESET} {output}")
     except (ValueError, FileNotFoundError, JSONDecodeError) as error:
         print(f"Error: {error}")
         return

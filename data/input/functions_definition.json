@@ -15,21 +15,6 @@
     }
   },
   {
-    "name": "fn_add",
-    "description": "Add two string together and return their concatenation.",
-    "parameters": {
-      "a": {
-        "type": "string"
-      },
-      "b": {
-        "type": "string"
-      }
-    },
-    "returns": {
-      "type": "string"
-    }
-  },
-  {
     "name": "fn_greet",
     "description": "Generate a greeting message for a person by name.",
     "parameters": {
