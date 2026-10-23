@@ -19,28 +19,28 @@
         "prompt": "Greet shrek",
         "name": "fn_greet",
         "parameters": {
-            "name": "Shrek"
+            "name": " \"shrek\""
         }
     },
     {
         "prompt": "Greet john",
         "name": "fn_greet",
         "parameters": {
-            "name": "John"
+            "name": " \"john\""
         }
     },
     {
         "prompt": "Reverse the string 'hello'",
         "name": "fn_reverse_string",
         "parameters": {
-            "s": "hello"
+            "s": " 'hello'"
         }
     },
     {
         "prompt": "Reverse the string 'world'",
         "name": "fn_reverse_string",
         "parameters": {
-            "s": "world"
+            "s": " 'world'"
         }
     },
     {
@@ -61,25 +61,25 @@
         "prompt": "Replace all numbers in \"Hello 34 I'm 233 years old\" with NUMBERS",
         "name": "fn_substitute_string_with_regex",
         "parameters": {
-            "source_string": " \"Hello 34 I'm 233 years old\", regex= \"34|233\", replacement= \"34|233\"",
+            "source_string": " \"Hello 34 I'm 233 years old\"",
             "regex": " \"34|233\"",
-            "replacement": " \"34|233\""
+            "replacement": " \"3434233\""
         }
     },
     {
         "prompt": "Replace all vowels in 'Programming is fun' with asterisks",
         "name": "fn_substitute_string_with_regex",
         "parameters": {
-            "source_string": "Programming is fun, regex=.*, replacement=asterisks",
-            "regex": ".*",
-            "replacement": "asterisks"
+            "source_string": " 'Programming is fun'",
+            "regex": " 'a|e|i|o|u'",
+            "replacement": " '*'"
         }
     },
     {
         "prompt": "Substitute the word 'cat' with 'dog' in 'The cat sat on the mat with another cat'",
         "name": "fn_substitute_string_with_regex",
         "parameters": {
-            "source_string": " \"The cat sat on the mat with another cat\", regex= \"cat\", replacement= \"dog\"",
+            "source_string": " \"The cat sat on the mat with another cat\"",
             "regex": " \"cat\"",
             "replacement": " \"dog\""
         }
