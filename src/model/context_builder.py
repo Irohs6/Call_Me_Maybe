@@ -82,38 +82,27 @@ class ContextBuilder(BaseModel):
         self,
         prompt: Prompt,
         function: Function,
-        parameter: str,
-        values: dict[str, object],
     ) -> str:
         context = ""
 
-        context += f"User prompt: {prompt.prompt}\n"
-        context += f"Selected function: {function.name}\n"
-        context += f"Function description: {function.description}\n"
+        context += f"Prompt: {prompt.prompt}\n"
+        context += f"Function: {function.name}\n"
+        context += f"Description: {function.description}\n"
 
-        context += "Function parameters:\n"
-        for name, parameter_type in function.parameters.items():
-            context += f"- {name}: {parameter_type.type}\n"
+        context += "Function signature: "
+        context += f"{function.name}("
 
-        if values:
-            context += "Parameters already extracted:\n"
-            for name, value in values.items():
-                context += f"- {name}: {value}\n"
+        parameters = []
+
+        for name, definition in function.parameters.items():
+            parameters.append(f"{name}: {definition.type}")
+
+        context += ", ".join(parameters)
+        context += ")\n"
 
         context += (
-            f"\nCurrent parameter to extract: {parameter}\n"
-            "You are extracting an INPUT argument for the function.\n"
-            "Do NOT execute the function.\n"
-            "Do NOT return the result of the function.\n"
-            "Do NOT transform the input value.\n"
-            "Do not repeat a previous argument unless the request requires it.\n"
-            "Output only the raw argument value.\n"
-            "Do not add surrounding quotes.\n"
-            "Return only the value that must be passed to this parameter.\n"
-            "Do not explain.\n"
-            "Do not add a label.\n"
-            "End after the value with a newline.\n"
-            "Value:"
+            "Fill the function arguments from the prompt.\n"
+            "Do not execute the function.\n"
         )
 
         return context
