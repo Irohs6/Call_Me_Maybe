@@ -142,13 +142,47 @@ class FunctionSelector:
                     number_tokens.pop(key)
                     return float(number)
 
+    def string_context_ids(
+        self,
+        context_builder: ContextBuilder,
+        prompt: Prompt,
+        function: Function,
+        parameter: str,
+        values: dict[str, object],
+    ) -> list[int]:
+        user_context = context_builder.build_string_parameter_context(
+            prompt,
+            function,
+        )
+
+        assistant_progress = ""
+
+        for name, value in values.items():
+            assistant_progress += f"{name}={value}\n"
+
+        assistant_progress += f"{parameter}="
+
+        chat_context = (
+            "<|im_start|>user\n"
+            f"{user_context}"
+            "<|im_end|>\n"
+            "<|im_start|>assistant\n"
+            "<think>\n\n</think>\n\n"
+            f"{assistant_progress}"
+        )
+
+        return self.model.encode(
+            chat_context
+        )[0].tolist()
+
     def generate_free_string(
         self,
         context_ids: list[int],
     ) -> str:
         generated_ids: list[int] = []
+        argument_progress = ""
 
-        while True:
+        for _ in range(100):
             logits = self.model.get_logits_from_input_ids(
                 context_ids + generated_ids
             )
@@ -158,12 +192,25 @@ class FunctionSelector:
                 key=lambda token_id: logits[token_id],
             )
 
+            generation = self.model.decode(
+                [next_token_id]
+            )
+
+            if generation == "":
+                return argument_progress
+
             generated_ids.append(next_token_id)
 
-            argument_progress = self.model.decode(generated_ids)
+            argument_progress = self.model.decode(
+                generated_ids
+            )
 
             if "\n" in argument_progress:
                 return argument_progress.split("\n")[0]
+
+        raise ValueError(
+            "String generation exceeded maximum token count"
+        )
 
     def generate_string(
         self,
@@ -215,24 +262,33 @@ class FunctionSelector:
 
         for parameter in function.parameters:
             type_ = function.parameters[parameter].type
-            parameter_context = context_builder.build_parameter_context(
-                prompt,
-                function,
-                parameter,
-                values,
-            )
 
-            context_ids = self.model.encode(
-                parameter_context
-            )[0].tolist()
             if type_ == "number":
+                parameter_context = context_builder.build_parameter_context(
+                    prompt,
+                    function,
+                    parameter,
+                    values,
+                )
+
+                context_ids = self.model.encode(
+                    parameter_context
+                )[0].tolist()
 
                 value = self.generate_number(
                     context_ids, prompt.prompt, number_tokens
                 )
                 values[parameter] = value
                 print(f"Generated number for parameter '{parameter}': {value}")
+
             elif type_ == "string":
+                context_ids = self.string_context_ids(
+                    context_builder,
+                    prompt,
+                    function,
+                    parameter,
+                    values,
+                )
 
                 value = self.generate_free_string(context_ids)
                 values[parameter] = value
