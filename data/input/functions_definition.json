@@ -14,6 +14,27 @@
       "type": "number"
     }
   },
+   {
+    "name": "fn_multiply_numbers",
+    "description": "Multiply two numbers together and return their product.",
+    "parameters": {
+      "a": {
+        "type": "number"
+      },
+      "b": {
+        "type": "number"
+      },
+      "c": {
+        "type": "number"
+      },
+      "d": {
+        "type": "number"
+      }
+    },
+    "returns": {
+      "type": "number"
+    }
+  },
   {
     "name": "fn_greet",
     "description": "Generate a greeting message for a person by name.",

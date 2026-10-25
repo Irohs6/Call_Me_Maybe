@@ -1,21 +1,22 @@
+"""Command-line entry point for function calling."""
+
+import json
 from argparse import ArgumentParser
 from pathlib import Path
-from json.decoder import JSONDecodeError
 
+from llm_sdk import Small_LLM_Model
+
+from .function_selector import FunctionSelector
 from .model.app import Application
 from .model.context_builder import ContextBuilder
-from .function_selector import FunctionSelector
 from .model.models import FunctionCall
-from llm_sdk import Small_LLM_Model
-import json
 
-GREEN = "\033[92m"
 CYAN = "\033[96m"
-YELLOW = "\033[93m"
 RESET = "\033[0m"
 
 
 def main() -> None:
+    """Load inputs, generate function calls and write their JSON output."""
     parser = ArgumentParser()
 
     parser.add_argument(
@@ -65,7 +66,7 @@ def main() -> None:
         )
 
         results = []
-        for i, prompt in enumerate(app.prompts, start=1):
+        for prompt in app.prompts:
             context = context_builder.build_with_prompt(prompt)
 
             selected_function = function_selector.select(context)
@@ -84,7 +85,7 @@ def main() -> None:
         with args.output.open("w") as file:
             json.dump(output, file, indent=4)
         print(f"{CYAN}Dict answer final:{RESET} {output}")
-    except (ValueError, FileNotFoundError, JSONDecodeError) as error:
+    except (ValueError, FileNotFoundError) as error:
         print(f"Error: {error}")
         return
 
