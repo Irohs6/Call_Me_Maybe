@@ -75,16 +75,6 @@ class ContextBuilder(BaseModel):
             '{"name": "'
         )
 
-    @staticmethod
-    def extract_user_request(context: str) -> str:
-        _, user_marker, remaining = context.partition("<|im_start|>user\n")
-        request, assistant_marker, _ = remaining.rpartition(
-            "<|im_end|>\n<|im_start|>assistant\n"
-        )
-        if not user_marker or not assistant_marker:
-            raise ValueError("Selection context must contain a user message")
-        return request
-
     def build_parameter_context(
         self,
         prompt: Prompt,
