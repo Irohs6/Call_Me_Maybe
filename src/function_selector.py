@@ -1,5 +1,6 @@
 """Select functions and extract arguments with constrained decoding."""
 
+import json
 import re
 
 from llm_sdk import Small_LLM_Model
@@ -164,14 +165,15 @@ class FunctionSelector:
 
         raise ValueError("No number selected")
 
-    def generate_free_string(
+    def generate_strings(
         self,
         context_ids: list[int],
-    ) -> str:
-        """Generate a string until the JSON closing quote."""
+        parameters: list[str],
+    ) -> dict[str, object]:
+        """Generate all string arguments together as one JSON object."""
         generated_ids: list[int] = []
 
-        while True:
+        for _ in range(256):
             logits = self.model.get_logits_from_input_ids(
                 context_ids + generated_ids
             )
@@ -182,10 +184,40 @@ class FunctionSelector:
             generated_ids.append(next_token_id)
 
             progress = self.model.decode(generated_ids)
-            if '"' in progress:
-                return progress.split('"', 1)[0]
-            if "\n" in progress:
-                return progress.split("\n", 1)[0]
+            candidate = "{" + progress
+
+            try:
+                arguments, _ = json.JSONDecoder().raw_decode(
+                    candidate
+                )
+            except json.JSONDecodeError:
+                continue
+
+            if not isinstance(arguments, dict):
+                raise ValueError(
+                    "Generated arguments are not a JSON object"
+                )
+            if set(arguments) != set(parameters):
+                raise ValueError(
+                    "Generated string arguments do not match "
+                    "the function parameters"
+                )
+            if not all(
+                isinstance(arguments[name], str)
+                for name in parameters
+            ):
+                raise ValueError(
+                    "Generated string arguments must be strings"
+                )
+
+            return {
+                name: arguments[name]
+                for name in parameters
+            }
+
+        raise ValueError(
+            "String arguments exceeded maximum token count"
+        )
 
     def final_selection(
         self,
@@ -200,37 +232,59 @@ class FunctionSelector:
         number_tokens = self.number_tokens_available(
             prompt.prompt
         )
+        string_parameters = [
+            name
+            for name, definition in function.parameters.items()
+            if definition.type == "string"
+        ]
 
         for parameter, definition in function.parameters.items():
-            context = context_builder.build_parameter_context(
+            if definition.type != "number":
+                continue
+
+            context = context_builder.build_argument_context(
                 prompt,
                 function,
-                parameter,
+                [parameter],
                 values,
+            )
+            context += (
+                f'{json.dumps(parameter)}: '
             )
             context_ids = self.model.encode(
                 context
             )[0].tolist()
 
-            if definition.type == "number":
-                value = self.generate_number(
-                    context_ids,
-                    number_tokens,
-                )
-            elif definition.type == "string":
-                value = self.generate_free_string(
-                    context_ids
-                )
-            else:
-                raise ValueError(
-                    "Unsupported parameter type: "
-                    f"{definition.type}"
-                )
-
+            value = self.generate_number(
+                context_ids,
+                number_tokens,
+            )
             values[parameter] = value
             print(
-                f"Generated {definition.type} for "
-                f"parameter '{parameter}': {value}"
+                f"Generated number for parameter "
+                f"'{parameter}': {value}"
             )
+
+        if string_parameters:
+            context = context_builder.build_argument_context(
+                prompt,
+                function,
+                string_parameters,
+                values,
+            )
+            context_ids = self.model.encode(
+                context
+            )[0].tolist()
+            string_values = self.generate_strings(
+                context_ids,
+                string_parameters,
+            )
+            values.update(string_values)
+
+            for parameter in string_parameters:
+                print(
+                    f"Generated string for parameter "
+                    f"'{parameter}': {values[parameter]}"
+                )
 
         return values
