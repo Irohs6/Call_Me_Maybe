@@ -1,5 +1,7 @@
 """Generate boolean function arguments with constrained decoding."""
 
+import json
+
 from .argument_generator import ArgumentGenerator
 from .model.context_builder import ContextBuilder
 from .model.models import Function, Prompt
@@ -33,17 +35,18 @@ class BooleanArgumentGenerator(ArgumentGenerator):
                 **values,
                 **generated_values,
             }
-            parameter_context = (
-                context_builder.build_parameter_context(
-                    prompt,
-                    function,
-                    parameter,
-                    current_values,
-                )
+            context = context_builder.build_argument_context(
+                prompt=prompt,
+                function=function,
+                parameters=[parameter],
+                values=current_values,
             )
-            context_ids = self.decoder.encode(
-                parameter_context
+            context += (
+                "{"
+                f"{json.dumps(parameter)}: "
             )
+            context_ids = self.decoder.encode(context)
+
             selected = self.decoder.select_candidate(
                 context_ids,
                 boolean_tokens,
