@@ -11,6 +11,8 @@ from .model.app import Application
 
 from .model.models import FunctionCall
 
+from .function_argument_generator import FunctionArgumentGenerator
+
 CYAN = "\033[96m"
 RESET = "\033[0m"
 
@@ -48,7 +50,6 @@ def main() -> None:
     app = Application(
         functions_path=args.functions_definition,
         input_path=args.input,
-        output_path=args.output,
     )
 
     try:
@@ -61,18 +62,19 @@ def main() -> None:
             functions=app.functions,
         )
 
+        argument_generator = FunctionArgumentGenerator(model=model)
         results = []
         for prompt in app.prompts:
-
             selected_function = function_selector.select(prompt)
-            final_selection = function_selector.final_selection(
-                prompt,
-                selected_function,
+
+            argument_values = argument_generator.generate(
+                prompt=prompt,
+                function=selected_function,
             )
             function_call = FunctionCall(
                 prompt=prompt.prompt,
                 name=selected_function.name,
-                parameters=final_selection
+                parameters=argument_values
             )
             results.append(function_call)
         output = [result.model_dump(mode="json") for result in results]
