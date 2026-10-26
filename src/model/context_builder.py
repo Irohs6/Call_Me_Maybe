@@ -122,44 +122,14 @@ class ContextBuilder(BaseModel):
             '{"name": "'
         )
 
-    def build_parameter_context(
-        self,
-        prompt: Prompt,
-        function: Function,
-        parameter: str,
-        values: dict[str, object],
-    ) -> str:
-        """Build context for one number or boolean argument."""
-        context = (
-            f"Prompt: {prompt.prompt}\n"
-            f"Function: {function.name}\n"
-            f"Description: {function.description}\n"
-            f"Function signature: {function.name}("
-        )
-
-        parameters = [
-            f"{name}: {definition.type}"
-            for name, definition
-            in function.parameters.items()
-        ]
-        context += ", ".join(parameters)
-        context += ")\n"
-        context += "Arguments already generated:\n"
-
-        for name, value in values.items():
-            context += f"{name}={value}\n"
-
-        context += f"{parameter}="
-        return context
-
-    def build_string_arguments_context(
+    def build_argument_context(
         self,
         prompt: Prompt,
         function: Function,
         parameters: list[str],
         values: dict[str, object],
     ) -> str:
-        """Build a Qwen/Hermes context for string argument generation."""
+        """Build one shared context for typed argument generation."""
         tool = self.tool_definition(
             function,
             parameters=parameters,
@@ -173,12 +143,13 @@ class ContextBuilder(BaseModel):
             "<|im_start|>system\n"
             "You are a function-calling assistant. Supply only the "
             "arguments described in the provided tool schema. "
+            "Use the JSON types required by the schema. "
             "Do not execute the function or return its result.\n"
             "Copy literal text without changing its spelling, case, "
-            "or whitespace. Supply concrete argument values. "
-            "Translate symbol names into literal characters. "
-            "For a requested class of text, use a pattern matching "
-            "that class rather than only one example.\n"
+            "or whitespace. Translate symbol names into literal "
+            "characters when appropriate. For a requested class of text, "
+            "use a pattern matching that class rather than only one "
+            "example.\n"
             "Arguments already generated: "
             f"{previous_values}\n\n"
             "# Tools\n\n"
@@ -193,4 +164,7 @@ class ContextBuilder(BaseModel):
             "<|im_start|>assistant\n"
             "<think>\n\n</think>\n\n"
             "<tool_call>\n"
+            '{"name": '
+            f'{json.dumps(function.name)}, '
+            '"arguments": '
         )
