@@ -2,9 +2,9 @@
 
 from pydantic import BaseModel, ConfigDict
 
-from .constrained_decoding import ConstrainedDecoder
-from .model.context_builder import ContextBuilder
-from .model.models import Function, Prompt
+from .constrained_decoder import ConstrainedDecoder
+from .context_builder import ContextBuilder
+from .models import Function, Prompt
 
 
 class FunctionSelector(BaseModel):
@@ -18,7 +18,9 @@ class FunctionSelector(BaseModel):
     def select(self, prompt: Prompt) -> Function:
         """Return the function preferred by successive LLM comparisons."""
         if not self.functions:
-            raise ValueError("No functions available for selection")
+            raise ValueError(
+                "No functions available for selection"
+            )
 
         selected = self.functions[0]
         if len(self.functions) == 1:
@@ -33,13 +35,11 @@ class FunctionSelector(BaseModel):
             builder = ContextBuilder(
                 functions=[selected, candidate]
             )
-            comparison_context = builder.build_selection_context(
+            context = builder.build_selection_context(
                 prompt,
                 comparison=True,
             )
-            context_ids = self.decoder.encode(
-                comparison_context
-            )
+            context_ids = self.decoder.encode(context)
             choice = self.decoder.select_candidate(
                 context_ids,
                 label_tokens,
