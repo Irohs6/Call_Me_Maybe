@@ -1,5 +1,6 @@
 """Generate numeric function arguments with constrained decoding."""
 
+import json
 import re
 
 from .argument_generator import ArgumentGenerator
@@ -43,17 +44,18 @@ class NumberArgumentGenerator(ArgumentGenerator):
                 **values,
                 **generated_values,
             }
-            parameter_context = (
-                context_builder.build_parameter_context(
-                    prompt,
-                    function,
-                    parameter,
-                    current_values,
-                )
+            context = context_builder.build_argument_context(
+                prompt=prompt,
+                function=function,
+                parameters=[parameter],
+                values=current_values,
             )
-            context_ids = self.decoder.encode(
-                parameter_context
+            context += (
+                "{"
+                f"{json.dumps(parameter)}: "
             )
+            context_ids = self.decoder.encode(context)
+
             candidate_tokens = {
                 index: tokens
                 for index, (_, tokens) in number_tokens.items()
