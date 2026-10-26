@@ -39,7 +39,7 @@ class FunctionSelector:
                     allowed_ids.append(token_id)
         return allowed_ids
 
-    def select(self, context: str) -> Function:
+    def select(self, prompt: Prompt) -> Function:
         if not self.functions:
             raise ValueError("No functions available for selection")
 
@@ -47,7 +47,6 @@ class FunctionSelector:
         if len(self.functions) == 1:
             return selected
 
-        request = ContextBuilder.extract_user_request(context)
         label_tokens = {
             label: self.model.encode(label + '"')[0].tolist()
             for label in ("A", "B")
@@ -55,7 +54,7 @@ class FunctionSelector:
         for candidate in self.functions[1:]:
             builder = ContextBuilder(functions=[selected, candidate])
             comparison_context = builder.build_with_prompt(
-                Prompt(prompt=request), comparison=True
+                prompt, comparison=True
             )
             context_ids = self.model.encode(comparison_context)[0].tolist()
             remaining = label_tokens.copy()
@@ -269,8 +268,7 @@ class FunctionSelector:
             return arguments
         functions = [function for _, function in candidates]
         selector = FunctionSelector(self.model, functions)
-        context = ContextBuilder(functions=functions).build_with_prompt(prompt)
-        selected = selector.select(context)
+        selected = selector.select(prompt)
         for candidate, function in candidates:
             if function.name == selected.name:
                 return {**arguments, "regex": candidate}
