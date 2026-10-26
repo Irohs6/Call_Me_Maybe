@@ -1,12 +1,10 @@
 """Reusable constrained-decoding primitives."""
 
-import json
-from pathlib import Path
-from typing import Any, Callable, TypeVar
+from typing import Callable, TypeVar
 
 import numpy as np
 from llm_sdk import Small_LLM_Model
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict
 
 
 CandidateKey = TypeVar("CandidateKey")
@@ -38,11 +36,6 @@ class ConstrainedDecoder(BaseModel):
     )
 
     model: Small_LLM_Model
-    vocabulary_ids: frozenset[int] = Field(default_factory=frozenset)
-
-    def model_post_init(self, __context: Any) -> None:
-        """Load the public vocabulary once after Pydantic validation."""
-        self.vocabulary_ids = self._load_vocabulary_ids()
 
     def encode(self, text: str) -> list[int]:
         """Encode text with the public SDK and return flat token IDs."""
@@ -77,15 +70,10 @@ class ConstrainedDecoder(BaseModel):
                 remaining,
                 position,
             )
-            allowed_ids = [
-                token_id
-                for token_id in allowed_ids
-                if token_id in self.vocabulary_ids
-            ]
 
             if not allowed_ids:
                 raise ValueError(
-                    "No vocabulary token can continue constrained decoding"
+                    "No token can continue constrained decoding"
                 )
 
             logits = self.logits(context_ids + generated_ids)
@@ -123,38 +111,9 @@ class ConstrainedDecoder(BaseModel):
         for raw_token_id in np.argsort(logits)[::-1]:
             token_id = int(raw_token_id)
 
-            if token_id not in self.vocabulary_ids:
-                continue
             if not np.isfinite(logits[token_id]):
                 continue
             if is_valid(token_id):
                 return token_id
 
         raise ValueError("No token can continue constrained decoding")
-
-    def _load_vocabulary_ids(self) -> frozenset[int]:
-        """Load token IDs from the vocabulary path exposed by the SDK."""
-        vocab_path = Path(self.model.get_path_to_vocab_file())
-
-        try:
-            with vocab_path.open("r", encoding="utf-8") as file:
-                vocabulary = json.load(file)
-        except (OSError, json.JSONDecodeError) as error:
-            raise ValueError(
-                f"Unable to load vocabulary file: {vocab_path}"
-            ) from error
-
-        if not isinstance(vocabulary, dict):
-            raise ValueError("Vocabulary file must contain a JSON object")
-
-        token_ids = frozenset(
-            token_id
-            for token_id in vocabulary.values()
-            if isinstance(token_id, int)
-            and not isinstance(token_id, bool)
-        )
-
-        if not token_ids:
-            raise ValueError("Vocabulary file contains no token IDs")
-
-        return token_ids
