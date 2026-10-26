@@ -6,11 +6,11 @@ from pathlib import Path
 
 from llm_sdk import Small_LLM_Model
 
-from .constrained_decoding import ConstrainedDecoder
-from .function_argument_generator import FunctionArgumentGenerator
+from .application import Application
+from .argument_generator import FunctionArgumentGenerator
+from .constrained_decoder import ConstrainedDecoder
 from .function_selector import FunctionSelector
-from .model.app import Application
-from .model.models import FunctionCall
+from .models import FunctionCall
 
 
 CYAN = "\033[96m"
@@ -53,9 +53,7 @@ def main() -> None:
     try:
         functions, prompts = application.load()
         model = Small_LLM_Model()
-        decoder = ConstrainedDecoder(
-            model=model
-        )
+        decoder = ConstrainedDecoder(model=model)
         function_selector = FunctionSelector(
             decoder=decoder,
             functions=functions,
