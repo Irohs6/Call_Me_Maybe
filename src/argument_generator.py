@@ -1,24 +1,27 @@
+"""Base interface for typed argument generators."""
+
 from abc import ABC, abstractmethod
 
-from llm_sdk import Small_LLM_Model
+from pydantic import BaseModel, ConfigDict
 
+from .constrained_decoding import ConstrainedDecoder
 from .model.models import Function, Prompt
 
 
-class ArgumentGenerator(ABC):
+class ArgumentGenerator(BaseModel, ABC):
+    """Define the common interface used by typed argument generators."""
 
-    def __init__(
-        self,
-        model: Small_LLM_Model,
-    ):
-        self.model = model
+    model_config = ConfigDict(extra="forbid")
+
+    decoder: ConstrainedDecoder
 
     @abstractmethod
     def generate(
         self,
         prompt: Prompt,
         function: Function,
-        parameter: list[str],
+        parameters: list[str],
         values: dict[str, object],
     ) -> dict[str, object]:
-        pass
+        """Generate the requested subset of function arguments."""
+        raise NotImplementedError

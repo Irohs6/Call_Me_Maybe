@@ -1,102 +1,90 @@
-from llm_sdk import Small_LLM_Model
+"""Orchestrate typed generation for one selected function."""
+
+from typing import TypeAlias
+
+from pydantic import BaseModel, ConfigDict
 
 from .argument_generator import ArgumentGenerator
-from .function_selector import FunctionSelector
+from .boolean_argument_generator import BooleanArgumentGenerator
+from .constrained_decoding import ConstrainedDecoder
 from .model.models import Function, Prompt
-from .model.regex_review import RegexInterpretations
 from .number_argument_generator import NumberArgumentGenerator
+from .regex_argument_reviewer import RegexArgumentReviewer
 from .string_argument_generator import StringArgumentGenerator
 
 
-class FunctionArgumentGenerator:
+GeneratorClass: TypeAlias = type[ArgumentGenerator]
 
-    def __init__(
-        self,
-        model: Small_LLM_Model,
-    ) -> None:
-        self.model = model
+GENERATOR_TYPES: dict[str, GeneratorClass] = {
+    "number": NumberArgumentGenerator,
+    "string": StringArgumentGenerator,
+    "boolean": BooleanArgumentGenerator,
+}
 
-        self.generators: dict[str, ArgumentGenerator] = {
-            "number": NumberArgumentGenerator(model),
-            "string": StringArgumentGenerator(model),
-        }
+
+class FunctionArgumentGenerator(BaseModel):
+    """Generate every argument required by a selected function."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    decoder: ConstrainedDecoder
 
     def generate(
         self,
         prompt: Prompt,
         function: Function,
     ) -> dict[str, object]:
-
+        """Generate arguments by delegating each type to its strategy."""
         values: dict[str, object] = {}
 
-        for type_name, generator in self.generators.items():
-            parameters = [
-                name
-                for name, definition in function.parameters.items()
-                if definition.type == type_name
-            ]
+        parameter_groups: dict[str, list[str]] = {}
+        for name, definition in function.parameters.items():
+            parameter_groups.setdefault(
+                definition.type,
+                [],
+            ).append(name)
 
-            if not parameters:
-                continue
+        for type_name, parameters in parameter_groups.items():
+            generator_class = GENERATOR_TYPES.get(
+                type_name
+            )
+            if generator_class is None:
+                raise ValueError(
+                    "Unsupported parameter type: "
+                    f"{type_name}"
+                )
 
+            generator = generator_class(
+                decoder=self.decoder
+            )
             generated_values = generator.generate(
                 prompt=prompt,
                 function=function,
                 parameters=parameters,
                 values=values,
             )
-
             values.update(generated_values)
 
-        return self._refine_regex_arguments(
-            prompt,
-            values,
-        )
-
-    def _refine_regex_arguments(
-        self,
-        prompt: Prompt,
-        arguments: dict[str, object],
-    ) -> dict[str, object]:
-
-        if set(arguments) != {
-            "source_string",
-            "regex",
-            "replacement",
-        }:
-            return arguments
-
-        pattern = arguments["regex"]
-
-        if not isinstance(pattern, str):
-            return arguments
-
-        candidates = RegexInterpretations(
-            pattern=pattern
-        ).candidates()
-
-        if len(candidates) < 2:
-            return arguments
-
-        functions = [
-            function
-            for _, function in candidates
+        missing = [
+            name
+            for name in function.parameters
+            if name not in values
         ]
+        if missing:
+            raise ValueError(
+                "Missing generated arguments: "
+                + ", ".join(missing)
+            )
 
-        selector = FunctionSelector(
-            self.model,
-            functions,
+        ordered_values = {
+            name: values[name]
+            for name in function.parameters
+        }
+
+        reviewer = RegexArgumentReviewer(
+            decoder=self.decoder
         )
-
-        selected = selector.select(
-            prompt
+        return reviewer.review(
+            prompt,
+            ordered_values,
         )
-
-        for candidate, function in candidates:
-            if function.name == selected.name:
-                return {
-                    **arguments,
-                    "regex": candidate,
-                }
-
-        return arguments

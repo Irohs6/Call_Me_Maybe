@@ -1,12 +1,16 @@
+"""Build prompts used for selection and argument generation."""
+
 import json
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 from .models import Function, Prompt
 
 
 class ContextBuilder(BaseModel):
-    """Build selection and argument prompts without executing functions."""
+    """Build LLM contexts without executing any declared function."""
+
+    model_config = ConfigDict(extra="forbid")
 
     functions: list[Function]
 
@@ -15,43 +19,85 @@ class ContextBuilder(BaseModel):
         function: Function,
         name: str | None = None,
         description: str | None = None,
+        parameters: list[str] | None = None,
     ) -> dict[str, object]:
-        """Build the shared JSON Schema representation of a function."""
+        """Build a JSON-schema-style tool definition."""
+        parameter_names = (
+            list(function.parameters)
+            if parameters is None
+            else parameters
+        )
+        properties = {
+            parameter: {
+                "type": function.parameters[parameter].type
+            }
+            for parameter in parameter_names
+        }
+
         return {
             "type": "function",
             "function": {
-                "name": function.name if name is None else name,
+                "name": (
+                    function.name
+                    if name is None
+                    else name
+                ),
                 "description": (
-                    function.description if description
-                    is None else description
+                    function.description
+                    if description is None
+                    else description
                 ),
                 "parameters": {
                     "type": "object",
-                    "properties": {
-                        key: {"type": definition.type}
-                        for key, definition in function.parameters.items()
-                    },
-                    "required": list(function.parameters),
+                    "properties": properties,
+                    "required": parameter_names,
                 },
             },
         }
 
-    def build_with_prompt(
-        self, prompt: Prompt, comparison: bool = False
+    def build_selection_context(
+        self,
+        prompt: Prompt,
+        comparison: bool = False,
     ) -> str:
+        """Build the Qwen/Hermes context used to select a function."""
         if comparison and len(self.functions) != 2:
-            raise ValueError("A comparison requires exactly two functions")
+            raise ValueError(
+                "A comparison requires exactly two functions"
+            )
 
-        tools = []
-        for index, function in enumerate(self.functions):
-            name = chr(ord("A") + index) if comparison else function.name
+        tools: list[dict[str, object]] = []
+
+        for index, function in enumerate(
+            self.functions
+        ):
+            name = (
+                chr(ord("A") + index)
+                if comparison
+                else function.name
+            )
             description = function.description
+
             if comparison:
-                description += f" Actual function name: {function.name}."
-            tools.append(self.tool_definition(function, name, description))
+                description += (
+                    " Actual function name: "
+                    f"{function.name}."
+                )
+
+            tools.append(
+                self.tool_definition(
+                    function,
+                    name,
+                    description,
+                )
+            )
 
         tool_definitions = "\n".join(
-            json.dumps(tool, ensure_ascii=False) for tool in tools
+            json.dumps(
+                tool,
+                ensure_ascii=False,
+            )
+            for tool in tools
         )
 
         return (
@@ -83,50 +129,58 @@ class ContextBuilder(BaseModel):
         parameter: str,
         values: dict[str, object],
     ) -> str:
-        context = ""
+        """Build context for one number or boolean argument."""
+        context = (
+            f"Prompt: {prompt.prompt}\n"
+            f"Function: {function.name}\n"
+            f"Description: {function.description}\n"
+            f"Function signature: {function.name}("
+        )
 
-        context += f"Prompt: {prompt.prompt}\n"
-        context += f"Function: {function.name}\n"
-        context += f"Description: {function.description}\n"
-
-        context += "Function signature: "
-        context += f"{function.name}("
-
-        parameters = []
-
-        for name, definition in function.parameters.items():
-            parameters.append(f"{name}: {definition.type}")
-
+        parameters = [
+            f"{name}: {definition.type}"
+            for name, definition
+            in function.parameters.items()
+        ]
         context += ", ".join(parameters)
         context += ")\n"
-
         context += "Arguments already generated:\n"
 
         for name, value in values.items():
             context += f"{name}={value}\n"
 
         context += f"{parameter}="
-
         return context
 
-    def build_string_parameter_context(
+    def build_string_arguments_context(
         self,
         prompt: Prompt,
         function: Function,
+        parameters: list[str],
+        values: dict[str, object],
     ) -> str:
-        tool = self.tool_definition(function)
+        """Build a Qwen/Hermes context for string argument generation."""
+        tool = self.tool_definition(
+            function,
+            parameters=parameters,
+        )
+        previous_values = json.dumps(
+            values,
+            ensure_ascii=False,
+        )
 
         return (
             "<|im_start|>system\n"
-            "You are a function-calling assistant. Supply the arguments "
-            "needed to fulfill the user's request. Do not execute the "
-            "function or return its result.\n"
+            "You are a function-calling assistant. Supply only the "
+            "arguments described in the provided tool schema. "
+            "Do not execute the function or return its result.\n"
             "Copy literal text without changing its spelling, case, "
-            "or whitespace.\n"
-            "Supply concrete argument values, translating symbol names "
-            "into literal characters. For a requested class of text, "
-            "use a pattern matching that class rather than only one "
-            "example.\n\n"
+            "or whitespace. Supply concrete argument values. "
+            "Translate symbol names into literal characters. "
+            "For a requested class of text, use a pattern matching "
+            "that class rather than only one example.\n"
+            "Arguments already generated: "
+            f"{previous_values}\n\n"
             "# Tools\n\n"
             "Available function definitions:\n<tools>\n"
             f"{json.dumps(tool, ensure_ascii=False)}\n"

@@ -6,19 +6,19 @@ from pathlib import Path
 
 from llm_sdk import Small_LLM_Model
 
+from .constrained_decoding import ConstrainedDecoder
+from .function_argument_generator import FunctionArgumentGenerator
 from .function_selector import FunctionSelector
 from .model.app import Application
-
 from .model.models import FunctionCall
 
-from .function_argument_generator import FunctionArgumentGenerator
 
 CYAN = "\033[96m"
 RESET = "\033[0m"
 
 
 def main() -> None:
-    """Load inputs, generate function calls and write their JSON output."""
+    """Load inputs, generate function calls, and write JSON output."""
     parser = ArgumentParser()
 
     parser.add_argument(
@@ -28,7 +28,6 @@ def main() -> None:
             "data/input/functions_definition.json"
         ),
     )
-
     parser.add_argument(
         "--input",
         type=Path,
@@ -36,7 +35,6 @@ def main() -> None:
             "data/input/function_calling_tests.json"
         ),
     )
-
     parser.add_argument(
         "--output",
         type=Path,
@@ -56,35 +54,62 @@ def main() -> None:
         app.run()
 
         model = Small_LLM_Model()
-
+        decoder = ConstrainedDecoder(
+            model=model
+        )
         function_selector = FunctionSelector(
-            model=model,
+            decoder=decoder,
             functions=app.functions,
         )
+        argument_generator = FunctionArgumentGenerator(
+            decoder=decoder
+        )
 
-        argument_generator = FunctionArgumentGenerator(model=model)
-        results = []
+        results: list[FunctionCall] = []
+
         for prompt in app.prompts:
-            selected_function = function_selector.select(prompt)
-
+            selected_function = function_selector.select(
+                prompt
+            )
             argument_values = argument_generator.generate(
                 prompt=prompt,
                 function=selected_function,
             )
-            function_call = FunctionCall(
-                prompt=prompt.prompt,
-                name=selected_function.name,
-                parameters=argument_values
+            results.append(
+                FunctionCall(
+                    prompt=prompt.prompt,
+                    name=selected_function.name,
+                    parameters=argument_values,
+                )
             )
-            results.append(function_call)
-        output = [result.model_dump(mode="json") for result in results]
-        args.output.parent.mkdir(parents=True, exist_ok=True)
-        with args.output.open("w") as file:
-            json.dump(output, file, indent=4)
-        print(f"{CYAN}Dict answer final:{RESET} {output}")
-    except (ValueError, FileNotFoundError) as error:
+
+        output = [
+            result.model_dump(mode="json")
+            for result in results
+        ]
+
+        args.output.parent.mkdir(
+            parents=True,
+            exist_ok=True,
+        )
+        with args.output.open(
+            "w",
+            encoding="utf-8",
+        ) as file:
+            json.dump(
+                output,
+                file,
+                indent=4,
+                ensure_ascii=False,
+            )
+
+        print(
+            f"{CYAN}Dict answer final:{RESET} "
+            f"{output}"
+        )
+
+    except (ValueError, OSError) as error:
         print(f"Error: {error}")
-        return
 
 
 if __name__ == "__main__":
