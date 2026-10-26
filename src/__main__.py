@@ -45,21 +45,20 @@ def main() -> None:
 
     args = parser.parse_args()
 
-    app = Application(
+    application = Application(
         functions_path=args.functions_definition,
         input_path=args.input,
     )
 
     try:
-        app.run()
-
+        functions, prompts = application.load()
         model = Small_LLM_Model()
         decoder = ConstrainedDecoder(
             model=model
         )
         function_selector = FunctionSelector(
             decoder=decoder,
-            functions=app.functions,
+            functions=functions,
         )
         argument_generator = FunctionArgumentGenerator(
             decoder=decoder
@@ -67,7 +66,7 @@ def main() -> None:
 
         results: list[FunctionCall] = []
 
-        for prompt in app.prompts:
+        for prompt in prompts:
             selected_function = function_selector.select(
                 prompt
             )
