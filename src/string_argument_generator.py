@@ -25,17 +25,13 @@ class StringArgumentGenerator(ArgumentGenerator):
         builder = ContextBuilder(
             functions=[function]
         )
-        context = builder.build_string_arguments_context(
+        context = builder.build_argument_context(
             prompt=prompt,
             function=function,
             parameters=parameters,
             values=values,
         )
-        context += (
-            '{"name": '
-            f'{json.dumps(function.name)}, '
-            '"arguments": {'
-        )
+        context += "{"
         context_ids = self.decoder.encode(context)
 
         grammar = StringArgumentsGrammar(
