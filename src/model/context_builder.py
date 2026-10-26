@@ -77,29 +77,27 @@ class ContextBuilder(BaseModel):
             '{"name": "'
         )
 
-    def build_parameter_context(
+    def build_argument_context(
         self,
         prompt: Prompt,
         function: Function,
-        parameter: str,
+        parameters: list[str],
         values: dict[str, object],
     ) -> str:
-        """Build one shared context for number and string arguments."""
+        """Build the shared context used for argument generation."""
         tool = self.tool_definition(
             function,
-            parameters=[parameter],
+            parameters=parameters,
         )
         previous_values = json.dumps(
             values,
             ensure_ascii=False,
         )
-        parameter_type = function.parameters[parameter].type
-        value_prefix = '"' if parameter_type == "string" else ""
 
         return (
             "<|im_start|>system\n"
             "You are a function-calling assistant. Supply only the "
-            "argument described in the provided tool schema. "
+            "arguments described in the provided tool schema. "
             "Do not execute the function or return its result.\n"
             "Copy literal text without changing its spelling, case, "
             "or whitespace. Translate symbol names into literal "
@@ -120,5 +118,4 @@ class ContextBuilder(BaseModel):
             '{"name": '
             f'{json.dumps(function.name)}, '
             '"arguments": {'
-            f'{json.dumps(parameter)}: {value_prefix}'
         )
