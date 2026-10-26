@@ -9,7 +9,6 @@ from .parser import JsonParser
 class Application(BaseModel):
     functions_path: Path
     input_path: Path
-    output_path: Path
     functions: list[Function] = Field(default_factory=list)
     prompts: list[Prompt] = Field(default_factory=list)
 

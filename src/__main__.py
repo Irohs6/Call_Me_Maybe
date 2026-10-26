@@ -8,7 +8,7 @@ from llm_sdk import Small_LLM_Model
 
 from .function_selector import FunctionSelector
 from .model.app import Application
-from .model.context_builder import ContextBuilder
+
 from .model.models import FunctionCall
 
 CYAN = "\033[96m"
@@ -54,10 +54,6 @@ def main() -> None:
     try:
         app.run()
 
-        context_builder = ContextBuilder(
-            functions=app.functions
-        )
-
         model = Small_LLM_Model()
 
         function_selector = FunctionSelector(
@@ -67,9 +63,8 @@ def main() -> None:
 
         results = []
         for prompt in app.prompts:
-            context = context_builder.build_with_prompt(prompt)
 
-            selected_function = function_selector.select(context)
+            selected_function = function_selector.select(prompt)
             final_selection = function_selector.final_selection(
                 prompt,
                 selected_function,
