@@ -15,19 +15,11 @@ class ContextBuilder(BaseModel):
     @staticmethod
     def tool_definition(
         function: Function,
-        parameters: list[str] | None = None,
     ) -> dict[str, object]:
         """Build one tool definition from a function model."""
-        parameter_names = (
-            list(function.parameters)
-            if parameters is None
-            else parameters
-        )
         properties = {
-            name: {
-                "type": function.parameters[name].type
-            }
-            for name in parameter_names
+            name: {"type": definition.type}
+            for name, definition in function.parameters.items()
         }
 
         return {
@@ -38,7 +30,7 @@ class ContextBuilder(BaseModel):
                 "parameters": {
                     "type": "object",
                     "properties": properties,
-                    "required": parameter_names,
+                    "required": list(function.parameters),
                 },
             },
         }
@@ -81,30 +73,19 @@ class ContextBuilder(BaseModel):
         self,
         prompt: Prompt,
         function: Function,
-        parameters: list[str],
-        values: dict[str, object],
     ) -> str:
-        """Build the shared context used for argument generation."""
-        tool = self.tool_definition(
-            function,
-            parameters=parameters,
-        )
-        previous_values = json.dumps(
-            values,
-            ensure_ascii=False,
-        )
+        """Build one context for the complete argument object."""
+        tool = self.tool_definition(function)
 
         return (
             "<|im_start|>system\n"
-            "You are a function-calling assistant. Supply only the "
-            "arguments described in the provided tool schema. "
-            "Do not execute the function or return its result.\n"
+            "You are a function-calling assistant. Supply every "
+            "argument described in the provided tool schema in one "
+            "JSON object. Do not execute the function or return its result.\n"
             "Copy literal text without changing its spelling, case, "
             "or whitespace. Translate symbol names into literal "
             "characters when appropriate. For a requested class of text, "
-            "use a pattern matching that class rather than one example.\n"
-            "Arguments already generated: "
-            f"{previous_values}\n\n"
+            "use a pattern matching that class rather than one example.\n\n"
             "# Tools\n\n"
             "Available function definitions:\n<tools>\n"
             f"{json.dumps(tool, ensure_ascii=False)}\n"
