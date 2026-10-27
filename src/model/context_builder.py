@@ -1,119 +1,102 @@
+"""Build Qwen/Hermes contexts for function calling."""
+
+import json
+
 from pydantic import BaseModel
 
 from .models import Function, Prompt
 
 
 class ContextBuilder(BaseModel):
+    """Build contexts for function selection and argument extraction."""
+
     functions: list[Function]
 
-    def build(self) -> str:
-        context: str = ""
-        for function in self.functions:
-            context += (
-                f"Function: {function.name}\n"
-                f"Description: {function.description}\n\n"
+    @staticmethod
+    def tool_definition(
+        function: Function,
+    ) -> dict[str, object]:
+        """Build one tool definition from a function model."""
+        properties = {
+            name: {"type": definition.type}
+            for name, definition in function.parameters.items()
+        }
+
+        return {
+            "type": "function",
+            "function": {
+                "name": function.name,
+                "description": function.description,
+                "parameters": {
+                    "type": "object",
+                    "properties": properties,
+                    "required": list(function.parameters),
+                },
+            },
+        }
+
+    def build_function_selection_context(
+        self,
+        prompt: Prompt,
+    ) -> str:
+        """Build context used to choose one function."""
+        tools = "\n".join(
+            json.dumps(
+                self.tool_definition(function),
+                ensure_ascii=False,
             )
-        return context
-
-    def build_with_prompt(self, prompt: Prompt) -> str:
-        context: str = ""
-
-        context += "Available functions:\n\n"
-
-        for function in self.functions:
-            context += f"Name: {function.name}\n"
-            context += f"Description: {function.description}\n"
-            context += "Parameters:\n"
-
-            for name, parameter in function.parameters.items():
-                context += f"- {name}: {parameter.type}\n"
-
-            context += f"Returns: {function.returns.type}\n\n"
-
-        context += f"User request: {prompt.prompt}\n\n"
-
-        context += (
-            "Choose the single function that should be called to satisfy "
-            "the user request.\n"
-            "Choose based on the requested operation and the function "
-            "description, not only on words or values appearing in the request.\n"
-            "Do not execute the function.\n"
-            "Do not generate parameter values.\n"
-            "Output only the exact function name.\n"
-            "Function:"
+            for function in self.functions
         )
 
-        return context
+        return (
+            "<|im_start|>system\n"
+            "You are a function-calling assistant. Choose the single "
+            "function that matches the operation requested by the user. "
+            "Base your choice on each function's description and parameter "
+            "schema. Do not execute the function.\n\n"
+            "# Tools\n\n"
+            "Available function definitions:\n<tools>\n"
+            f"{tools}\n"
+            "</tools>\n\n"
+            "Write one JSON function call inside <tool_call> and "
+            "</tool_call>, with the keys name and arguments.\n"
+            "<|im_end|>\n"
+            "<|im_start|>user\n"
+            f"{prompt.prompt}<|im_end|>\n"
+            "<|im_start|>assistant\n"
+            "<think>\n\n</think>\n\n"
+            "<tool_call>\n"
+            '{"name": "'
+        )
 
-    def build_parameter_context(
+    def build_argument_context(
         self,
         prompt: Prompt,
         function: Function,
-        parameter: str,
-        values: dict[str, object],
     ) -> str:
-        context = ""
+        """Build one context for the complete argument object."""
+        tool = self.tool_definition(function)
 
-        context += f"Prompt: {prompt.prompt}\n"
-        context += f"Function: {function.name}\n"
-        context += f"Description: {function.description}\n"
-
-        context += "Function signature: "
-        context += f"{function.name}("
-
-        parameters = []
-
-        for name, definition in function.parameters.items():
-            parameters.append(f"{name}: {definition.type}")
-
-        context += ", ".join(parameters)
-        context += ")\n"
-
-        context += "Arguments already generated:\n"
-
-        for name, value in values.items():
-            context += f"{name}={value}\n"
-
-        context += f"{parameter}="
-
-        return context
-
-    def build_string_parameter_context(
-        self,
-        prompt: Prompt,
-        function: Function,
-        parameter: str,
-        values: dict[str, object],
-    ) -> str:
-        context = ""
-
-        context += f"User prompt: {prompt.prompt}\n"
-        context += f"Selected function: {function.name}\n"
-        context += f"Function description: {function.description}\n"
-
-        context += "Function parameters:\n"
-        for name, parameter_type in function.parameters.items():
-            context += f"- {name}: {parameter_type.type}\n"
-
-        if values:
-            context += "Parameters already extracted:\n"
-            for name, value in values.items():
-                context += f"- {name}: {value}\n"
-
-        context += (
-            f"\nCurrent parameter to extract: {parameter}\n"
-            "You are extracting an INPUT argument for the function.\n"
-            "Do NOT execute the function.\n"
-            "Do NOT return the result of the function.\n"
-            "Do NOT transform the input value.\n"
-            "Do not repeat a previous argument unless the request requires it.\n"
-            "Output only the raw argument value.\n"
-            "Do not add surrounding quotes.\n"
-            "Return only the value that must be passed to this parameter.\n"
-            "Do not explain.\n"
-            "Do not add a label.\n"
-            "End after the value with a newline.\n"
-            "Value:"
+        return (
+            "<|im_start|>system\n"
+            "You are a function-calling assistant. Supply every "
+            "argument described in the provided tool schema in one "
+            "JSON object. Do not execute the function or return its result.\n"
+            "Copy literal text without changing its spelling, case, "
+            "or whitespace. Translate symbol names into literal "
+            "characters when appropriate. For a requested class of text, "
+            "use a pattern matching that class rather than one example.\n\n"
+            "# Tools\n\n"
+            "Available function definitions:\n<tools>\n"
+            f"{json.dumps(tool, ensure_ascii=False)}\n"
+            "</tools>\n"
+            "<|im_end|>\n"
+            "<|im_start|>user\n"
+            f"{prompt.prompt}<|im_end|>\n"
+            "<|im_start|>assistant\n"
+            "<think>\n\n</think>\n\n"
+            "<tool_call>\n"
+            '{"name": '
+            f'{json.dumps(function.name)}, '
+            '"arguments": {'
         )
-
-        return context

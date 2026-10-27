@@ -2,6 +2,7 @@ from argparse import ArgumentParser
 from pathlib import Path
 from json.decoder import JSONDecodeError
 
+from .argument_generator import ArgumentGenerator
 from .model.app import Application
 from .model.context_builder import ContextBuilder
 from .function_selector import FunctionSelector
@@ -63,20 +64,23 @@ def main() -> None:
             model=model,
             functions=app.functions,
         )
+        argument_generator = ArgumentGenerator(
+            model=model,
+        )
 
         results = []
         for i, prompt in enumerate(app.prompts, start=1):
-            context = context_builder.build_with_prompt(prompt)
+            context = context_builder.build_function_selection_context(prompt)
 
             selected_function = function_selector.select(context)
-            final_selection = function_selector.final_selection(
+            parameters = argument_generator.generate(
                 prompt,
                 selected_function,
             )
             function_call = FunctionCall(
                 prompt=prompt.prompt,
                 name=selected_function.name,
-                parameters=final_selection
+                parameters=parameters
             )
             results.append(function_call)
         output = [result.model_dump(mode="json") for result in results]
