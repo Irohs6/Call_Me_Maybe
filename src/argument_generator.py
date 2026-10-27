@@ -6,6 +6,7 @@ from llm_sdk import Small_LLM_Model
 
 from .model.context_builder import ContextBuilder
 from .model.models import Function, Prompt
+from .json_grammar import JsonArgumentsGrammar
 
 
 class ArgumentGenerator:
@@ -16,6 +17,9 @@ class ArgumentGenerator:
         model: Small_LLM_Model,
     ) -> None:
         self.model = model
+        self.token_bytes = JsonArgumentsGrammar.load_vocabulary(
+            model.get_path_to_vocab_file()
+        )
 
     @staticmethod
     def create_argument_context(
@@ -74,6 +78,38 @@ class ArgumentGenerator:
 
         return validated
 
+    def select_valid_token(
+        self,
+        logits: list[float],
+        progress: bytes,
+        grammar: JsonArgumentsGrammar,
+    ) -> int:
+        """Choose the highest-scoring token allowed by the JSON grammar."""
+        token_ids = [
+            token_id
+            for token_id in self.token_bytes
+            if token_id < len(logits)
+        ]
+
+        def valid(token_id: int) -> bool:
+            return grammar.status(
+                progress + self.token_bytes[token_id]
+            ) != "invalid"
+
+        best_id = max(token_ids, key=logits.__getitem__)
+        if valid(best_id):
+            return best_id
+
+        for token_id in sorted(
+            token_ids,
+            key=logits.__getitem__,
+            reverse=True,
+        ):
+            if valid(token_id):
+                return token_id
+
+        raise ValueError("No token can continue valid JSON")
+
     def generate(
         self,
         prompt: Prompt,
@@ -86,25 +122,27 @@ class ArgumentGenerator:
         context = self.create_argument_context(prompt, function)
         context_ids = self.model.encode(context)[0].tolist()
         generated_ids: list[int] = []
-        decoder = json.JSONDecoder()
+        progress = b"{"
+        grammar = JsonArgumentsGrammar(
+            parameters={
+                name: definition.type
+                for name, definition in function.parameters.items()
+            }
+        )
+
         for _ in range(256):
             logits = self.model.get_logits_from_input_ids(
                 context_ids + generated_ids
             )
-            next_token_id = max(
-                range(len(logits)),
-                key=lambda token_id: logits[token_id],
+            next_token_id = self.select_valid_token(
+                logits, progress, grammar,
             )
             generated_ids.append(next_token_id)
+            progress += self.token_bytes[next_token_id]
 
-            candidate = "{" + self.model.decode(generated_ids)
-
-            try:
-                arguments, _ = decoder.raw_decode(candidate)
-            except json.JSONDecodeError:
-                continue
-
-            return self.validate_arguments(arguments, function)
+            if grammar.status(progress) == "complete":
+                arguments = json.loads(progress.decode("utf-8"))
+                return self.validate_arguments(arguments, function)
 
         raise ValueError(
             "Argument generation exceeded the 256-token limit"
