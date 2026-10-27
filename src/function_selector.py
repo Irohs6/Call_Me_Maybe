@@ -3,20 +3,15 @@
 from collections.abc import Iterable
 
 from llm_sdk import Small_LLM_Model
+from pydantic import BaseModel
 
 from .model.models import Function
 
 
-class FunctionSelector:
+class FunctionSelector(BaseModel):
     """Select one function through constrained decoding."""
-
-    def __init__(
-        self,
-        model: Small_LLM_Model,
-        functions: list[Function],
-    ) -> None:
-        self.model = model
-        self.functions = functions
+    model: Small_LLM_Model
+    functions: list[Function]
 
     @staticmethod
     def allowed_ids_for_position(
@@ -42,7 +37,7 @@ class FunctionSelector:
         """Encode available function names."""
         return {
             function.name: self.model.encode(
-                function.name + '"'
+                function.name + '\n'
             )[0].tolist()
             for function in self.functions
         }
