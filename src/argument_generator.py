@@ -48,26 +48,26 @@ class ArgumentGenerator:
 
         for name, definition in function.parameters.items():
             value = arguments[name]
-            kind = definition.type
+            type_value = definition.type
 
-            if kind == "string":
+            if type_value == "string":
                 valid = isinstance(value, str)
-            elif kind == "number":
+            elif type_value == "number":
                 valid = isinstance(value, (int, float)) and not isinstance(
                     value, bool
                 )
                 if valid:
                     value = float(value)
-            elif kind == "integer":
+            elif type_value == "integer":
                 valid = isinstance(value, int) and not isinstance(value, bool)
-            elif kind == "boolean":
+            elif type_value == "boolean":
                 valid = isinstance(value, bool)
             else:
-                raise ValueError(f"Unsupported argument type: {kind}")
+                raise ValueError(f"Unsupported argument type: {type_value}")
 
             if not valid:
                 raise ValueError(
-                    f"Invalid value for '{name}': expected {kind}"
+                    f"Invalid value for '{name}': expected {type_value}"
                 )
 
             validated[name] = value
