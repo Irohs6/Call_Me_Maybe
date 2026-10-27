@@ -35,7 +35,7 @@ class ContextBuilder(BaseModel):
             },
         }
 
-    def build_with_prompt(
+    def build_function_selection_context(
         self,
         prompt: Prompt,
     ) -> str:

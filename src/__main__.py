@@ -70,7 +70,7 @@ def main() -> None:
 
         results = []
         for i, prompt in enumerate(app.prompts, start=1):
-            context = context_builder.build_with_prompt(prompt)
+            context = context_builder.build_function_selection_context(prompt)
 
             selected_function = function_selector.select(context)
             parameters = argument_generator.generate(
