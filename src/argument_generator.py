@@ -61,6 +61,45 @@ class ArgumentGenerator:
             )
         }
 
+    def create_number_context(
+        self,
+        prompt: Prompt,
+        function: Function,
+        parameter: str,
+        values: dict[str, object],
+    ) -> str:
+        """Build the context used to generate one number."""
+        context_builder = ContextBuilder(
+            functions=[function]
+        )
+        context = context_builder.build_argument_context(
+            prompt,
+            function,
+            [parameter],
+            values,
+        )
+
+        return context + f'{json.dumps(parameter)}: '
+
+    def create_strings_context(
+        self,
+        prompt: Prompt,
+        function: Function,
+        parameters: list[str],
+        values: dict[str, object],
+    ) -> str:
+        """Build the context used to generate string arguments."""
+        context_builder = ContextBuilder(
+            functions=[function]
+        )
+
+        return context_builder.build_argument_context(
+            prompt,
+            function,
+            parameters,
+            values,
+        )
+
     def generate_number(
         self,
         context_ids: list[int],
@@ -172,9 +211,6 @@ class ArgumentGenerator:
         function: Function,
     ) -> dict[str, object]:
         """Generate all arguments required by the selected function."""
-        context_builder = ContextBuilder(
-            functions=[function]
-        )
         values: dict[str, object] = {}
         number_tokens = self.number_tokens_available(
             prompt.prompt
@@ -189,29 +225,23 @@ class ArgumentGenerator:
             if definition.type != "number":
                 continue
 
-            context = context_builder.build_argument_context(
+            context = self.create_number_context(
                 prompt,
                 function,
-                [parameter],
+                parameter,
                 values,
             )
-            context += f'{json.dumps(parameter)}: '
             context_ids = self.model.encode(
                 context
             )[0].tolist()
 
-            value = self.generate_number(
+            values[parameter] = self.generate_number(
                 context_ids,
                 number_tokens,
             )
-            values[parameter] = value
-            print(
-                f"Generated number for parameter "
-                f"'{parameter}': {value}"
-            )
 
         if string_parameters:
-            context = context_builder.build_argument_context(
+            context = self.create_strings_context(
                 prompt,
                 function,
                 string_parameters,
@@ -221,16 +251,11 @@ class ArgumentGenerator:
                 context
             )[0].tolist()
 
-            string_values = self.generate_strings(
-                context_ids,
-                string_parameters,
-            )
-            values.update(string_values)
-
-            for parameter in string_parameters:
-                print(
-                    f"Generated string for parameter "
-                    f"'{parameter}': {values[parameter]}"
+            values.update(
+                self.generate_strings(
+                    context_ids,
+                    string_parameters,
                 )
+            )
 
         return values
