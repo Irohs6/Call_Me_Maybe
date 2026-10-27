@@ -1,7 +1,6 @@
 """Generate typed arguments for the selected function."""
 
 import json
-import re
 
 from llm_sdk import Small_LLM_Model
 
@@ -74,14 +73,6 @@ class ArgumentGenerator:
             validated[name] = value
 
         return validated
-
-    @staticmethod
-    def is_valid_number_prefix(value: str) -> bool:
-        """Accept a complete number or a number being generated."""
-        return re.fullmatch(
-            r"(?:|-|-?(?:0|[1-9][0-9]*)(?:\.[0-9]*)?)",
-            value,
-        ) is not None
 
     def generate(
         self,
