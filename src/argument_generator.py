@@ -28,8 +28,6 @@ class ArgumentGenerator:
         ).build_argument_context(
             prompt,
             function,
-            list(function.parameters),
-            {},
         )
 
     @staticmethod
