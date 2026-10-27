@@ -1,17 +1,15 @@
-"""Generate arguments for a selected function."""
+"""Generate typed arguments for the selected function."""
 
 import json
-import re
 
 from llm_sdk import Small_LLM_Model
 
 from .model.context_builder import ContextBuilder
 from .model.models import Function, Prompt
-from .token_utils import allowed_ids_for_position
 
 
 class ArgumentGenerator:
-    """Generate number and string arguments for one function."""
+    """Generate every argument in a single JSON sequence."""
 
     def __init__(
         self,
@@ -20,122 +18,77 @@ class ArgumentGenerator:
         self.model = model
 
     @staticmethod
-    def extract_numbers(
-        prompt: str,
-    ) -> list[str]:
-        """Extract signed integer and decimal literals."""
-        return re.findall(
-            r"-?\d+(?:\.\d+)?",
-            prompt,
-        )
-
-    def number_tokens_available(
-        self,
-        prompt: str,
-    ) -> dict[int, tuple[str, list[int]]]:
-        """Encode every numeric value found in the prompt."""
-        return {
-            index: (
-                number,
-                self.model.encode(number)[0].tolist(),
-            )
-            for index, number in enumerate(
-                self.extract_numbers(prompt)
-            )
-        }
-
-    def create_number_context(
-        self,
+    def create_argument_context(
         prompt: Prompt,
         function: Function,
-        parameter: str,
-        values: dict[str, object],
     ) -> str:
-        """Build the context used to generate one number."""
-        context_builder = ContextBuilder(
+        """Prepare one context containing every function parameter."""
+        return ContextBuilder(
             functions=[function]
-        )
-        context = context_builder.build_argument_context(
+        ).build_argument_context(
             prompt,
             function,
-            [parameter],
-            values,
+            list(function.parameters),
+            {},
         )
 
-        return context + f'{json.dumps(parameter)}: '
-
-    def create_strings_context(
-        self,
-        prompt: Prompt,
+    @staticmethod
+    def validate_arguments(
+        arguments: object,
         function: Function,
-        parameters: list[str],
-        values: dict[str, object],
-    ) -> str:
-        """Build the context used to generate string arguments."""
-        context_builder = ContextBuilder(
-            functions=[function]
-        )
+    ) -> dict[str, object]:
+        """Verify the generated object matches the function schema."""
+        if not isinstance(arguments, dict):
+            raise ValueError("Generated arguments must be a JSON object")
 
-        return context_builder.build_argument_context(
-            prompt,
-            function,
-            parameters,
-            values,
-        )
-
-    def generate_number(
-        self,
-        context_ids: list[int],
-        number_tokens: dict[int, tuple[str, list[int]]],
-    ) -> float:
-        """Choose one number from values present in the prompt."""
-        candidates = number_tokens.copy()
-        generated_ids: list[int] = []
-
-        if not candidates:
-            raise ValueError("No number found in prompt")
-
-        while candidates:
-            position = len(generated_ids)
-            allowed_ids = allowed_ids_for_position(
-                (tokens for _, tokens in candidates.values()),
-                position,
+        if set(arguments) != set(function.parameters):
+            raise ValueError(
+                "Generated argument names do not match the function schema"
             )
 
-            if not allowed_ids:
+        validated: dict[str, object] = {}
+
+        for name, definition in function.parameters.items():
+            value = arguments[name]
+            kind = definition.type
+
+            if kind == "string":
+                valid = isinstance(value, str)
+            elif kind == "number":
+                valid = isinstance(value, (int, float)) and not isinstance(
+                    value, bool
+                )
+                if valid:
+                    value = float(value)
+            elif kind == "integer":
+                valid = isinstance(value, int) and not isinstance(value, bool)
+            elif kind == "boolean":
+                valid = isinstance(value, bool)
+            else:
+                raise ValueError(f"Unsupported argument type: {kind}")
+
+            if not valid:
                 raise ValueError(
-                    "No number can continue constrained decoding"
+                    f"Invalid value for '{name}': expected {kind}"
                 )
 
-            logits = self.model.get_logits_from_input_ids(
-                context_ids + generated_ids
-            )
-            next_token_id = max(
-                allowed_ids,
-                key=lambda token_id: logits[token_id],
-            )
-            generated_ids.append(next_token_id)
+            validated[name] = value
 
-            candidates = {
-                index: (number, tokens)
-                for index, (number, tokens) in candidates.items()
-                if tokens[:len(generated_ids)] == generated_ids
-            }
+        return validated
 
-            for key, (number, tokens) in candidates.items():
-                if tokens == generated_ids:
-                    number_tokens.pop(key)
-                    return float(number)
-
-        raise ValueError("No number selected")
-
-    def generate_strings(
+    def generate(
         self,
-        context_ids: list[int],
-        parameters: list[str],
+        prompt: Prompt,
+        function: Function,
     ) -> dict[str, object]:
-        """Generate all string arguments together as one JSON object."""
+        """Generate and validate one complete JSON argument object."""
+        if not function.parameters:
+            return {}
+
+        context = self.create_argument_context(prompt, function)
+        context_ids = self.model.encode(context)[0].tolist()
         generated_ids: list[int] = []
+        decoder = json.JSONDecoder()
 
         for _ in range(256):
             logits = self.model.get_logits_from_input_ids(
@@ -147,95 +100,15 @@ class ArgumentGenerator:
             )
             generated_ids.append(next_token_id)
 
-            candidate = (
-                "{"
-                + self.model.decode(generated_ids)
-            )
+            candidate = "{" + self.model.decode(generated_ids)
 
             try:
-                arguments, _ = json.JSONDecoder().raw_decode(
-                    candidate
-                )
+                arguments, _ = decoder.raw_decode(candidate)
             except json.JSONDecodeError:
                 continue
 
-            if not isinstance(arguments, dict):
-                raise ValueError(
-                    "Generated arguments are not a JSON object"
-                )
-            if set(arguments) != set(parameters):
-                raise ValueError(
-                    "Generated string arguments do not match "
-                    "the function parameters"
-                )
-            if not all(
-                isinstance(arguments[name], str)
-                for name in parameters
-            ):
-                raise ValueError(
-                    "Generated string arguments must be strings"
-                )
-
-            return {
-                name: arguments[name]
-                for name in parameters
-            }
+            return self.validate_arguments(arguments, function)
 
         raise ValueError(
-            "String arguments exceeded maximum token count"
+            "Argument generation exceeded the 256-token limit"
         )
-
-    def generate(
-        self,
-        prompt: Prompt,
-        function: Function,
-    ) -> dict[str, object]:
-        """Generate all arguments required by the selected function."""
-        values: dict[str, object] = {}
-        number_tokens = self.number_tokens_available(
-            prompt.prompt
-        )
-        string_parameters = [
-            name
-            for name, definition in function.parameters.items()
-            if definition.type == "string"
-        ]
-
-        for parameter, definition in function.parameters.items():
-            if definition.type != "number":
-                continue
-
-            context = self.create_number_context(
-                prompt,
-                function,
-                parameter,
-                values,
-            )
-            context_ids = self.model.encode(
-                context
-            )[0].tolist()
-
-            values[parameter] = self.generate_number(
-                context_ids,
-                number_tokens,
-            )
-
-        if string_parameters:
-            context = self.create_strings_context(
-                prompt,
-                function,
-                string_parameters,
-                values,
-            )
-            context_ids = self.model.encode(
-                context
-            )[0].tolist()
-
-            values.update(
-                self.generate_strings(
-                    context_ids,
-                    string_parameters,
-                )
-            )
-
-        return values
