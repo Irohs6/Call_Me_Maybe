@@ -1,9 +1,10 @@
 """Select the function that best matches a prompt."""
 
+from collections.abc import Iterable
+
 from llm_sdk import Small_LLM_Model
 
 from .model.models import Function
-from .token_utils import allowed_ids_for_position
 
 
 class FunctionSelector:
@@ -16,6 +17,24 @@ class FunctionSelector:
     ) -> None:
         self.model = model
         self.functions = functions
+
+    @staticmethod
+    def allowed_ids_for_position(
+        sequences: Iterable[list[int]],
+        position: int,
+    ) -> list[int]:
+        """Return unique token IDs for the current position."""
+        allowed_ids: list[int] = []
+
+        for tokens in sequences:
+            if position >= len(tokens):
+                continue
+
+            token_id = tokens[position]
+            if token_id not in allowed_ids:
+                allowed_ids.append(token_id)
+
+        return allowed_ids
 
     def token_function_available(
         self,
@@ -39,7 +58,7 @@ class FunctionSelector:
 
         while candidates:
             position = len(generated_ids)
-            allowed_ids = allowed_ids_for_position(
+            allowed_ids = self.allowed_ids_for_position(
                 candidates.values(),
                 position,
             )
