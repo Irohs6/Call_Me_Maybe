@@ -3,19 +3,20 @@
 import json
 import re
 
-_NUMBER_PREFIX = re.compile(
-    r"(?:|-|-?(?:0|[1-9][0-9]*)(?:\\.[0-9]*)?"
-    r"|-?(?:0|[1-9][0-9]*)(?:\\.[0-9]+)?[eE][+-]?[0-9]*)"
-    r"\\Z"
-)
-_NUMBER_COMPLETE = re.compile(
-    r"-?(?:0|[1-9][0-9]*)(?:\\.[0-9]+)?(?:[eE][+-]?[0-9]+)?\\Z"
-)
-
 from llm_sdk import Small_LLM_Model
 
 from .model.context_builder import ContextBuilder
 from .model.models import Function, Prompt
+
+
+_NUMBER_PREFIX = re.compile(
+    r"(?:|-|-?(?:0|[1-9][0-9]*)(?:\.[0-9]*)?"
+    r"|-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?[eE][+-]?[0-9]*)"
+    r"\Z"
+)
+_NUMBER_COMPLETE = re.compile(
+    r"-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?\Z"
+)
 
 
 class ArgumentGenerator:
@@ -99,7 +100,7 @@ class ArgumentGenerator:
             if in_string:
                 if escaped:
                     escaped = False
-                elif char == "\\\\":
+                elif char == "\\":
                     escaped = True
                 elif char == '"':
                     in_string = False
@@ -113,7 +114,7 @@ class ArgumentGenerator:
 
         for field, complete in fields:
             match = re.fullmatch(
-                r'\\s*"([^"\\\\]+)"\\s*:\\s*(.*?)\\s*',
+                r'\s*"([^"\\]+)"\s*:\s*(.*?)\s*',
                 field,
                 re.DOTALL,
             )
