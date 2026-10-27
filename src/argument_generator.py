@@ -141,11 +141,12 @@ class ArgumentGenerator(BaseModel):
         """Generate every parameter, then build a Python dictionary."""
         arguments: dict[str, object] = {}
         builder = ContextBuilder(functions=[function])
+        context = builder.build_argument_context(prompt, function)
 
         for name, definition in function.parameters.items():
-            context = builder.build_argument_context(
-                prompt, function, name, arguments,
-            )
+            if arguments:
+                context += ", "
+            context += f"{json.dumps(name)}: "
             context_ids = self.model.encode(context)[0].tolist()
 
             if definition.type == "string":
@@ -154,5 +155,6 @@ class ArgumentGenerator(BaseModel):
                 value = self.generate_unconstrained(context_ids)
 
             arguments[name] = value
+            context += json.dumps(value, ensure_ascii=False)
 
         return self.validate_arguments(arguments, function)
