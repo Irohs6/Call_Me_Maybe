@@ -73,19 +73,28 @@ class ContextBuilder(BaseModel):
         self,
         prompt: Prompt,
         function: Function,
+        parameter: str,
+        values: dict[str, object],
     ) -> str:
-        """Build one context for the complete argument object."""
+        """Build a context to generate one parameter value."""
         tool = self.tool_definition(function)
+        previous = "".join(
+            f"{json.dumps(name)}: "
+            f"{json.dumps(value, ensure_ascii=False)}, "
+            for name, value in values.items()
+        )
 
         return (
             "<|im_start|>system\n"
-            "You are a function-calling assistant. Supply every "
-            "argument described in the provided tool schema in one "
-            "JSON object. Do not execute the function or return its result.\n"
-            "Copy literal text without changing its spelling, case, "
-            "or whitespace. Translate symbol names into literal "
-            "characters when appropriate. For a requested class of text, "
-            "use a pattern matching that class rather than one example.\n\n"
+            "You are a function-calling assistant. Fill the arguments "
+            "of the provided function using the user's request. "
+            "Do not execute the function or return its result. "
+            "Copy literal text exactly, including spelling, case, "
+            "and whitespace. For requested text classes, produce "
+            "a regex matching the class, not a single example.\n"
+            f"Continue with the JSON value for parameter {parameter}, "
+            f"which must be of type {function.parameters[parameter].type}. "
+            "Do not write explanations.\n\n"
             "# Tools\n\n"
             "Available function definitions:\n<tools>\n"
             f"{json.dumps(tool, ensure_ascii=False)}\n"
@@ -99,4 +108,5 @@ class ContextBuilder(BaseModel):
             '{"name": '
             f'{json.dumps(function.name)}, '
             '"arguments": {'
+            f'{previous}{json.dumps(parameter)}: '
         )
