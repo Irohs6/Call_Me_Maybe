@@ -1,33 +1,27 @@
-"""Generate typed arguments for the selected function."""
+"""Generate function arguments separately and assemble a Python dict."""
 
 import json
 
 from llm_sdk import Small_LLM_Model
+from pydantic import BaseModel, ConfigDict, Field
 
 from .model.context_builder import ContextBuilder
 from .model.models import Function, Prompt
+from .string_grammar import StringGrammar
 
 
-class ArgumentGenerator:
-    """Generate every argument in a single JSON sequence."""
+class ArgumentGenerator(BaseModel):
+    """Constrain strings, leaving other types unconstrained for now."""
 
-    def __init__(
-        self,
-        model: Small_LLM_Model,
-    ) -> None:
-        self.model = model
+    model_config = ConfigDict(arbitrary_types_allowed=True)
 
-    @staticmethod
-    def create_argument_context(
-        prompt: Prompt,
-        function: Function,
-    ) -> str:
-        """Prepare one context containing every function parameter."""
-        return ContextBuilder(
-            functions=[function]
-        ).build_argument_context(
-            prompt,
-            function,
+    model: Small_LLM_Model
+    token_bytes: dict[int, bytes] = Field(default_factory=dict)
+
+    def __init__(self, model: Small_LLM_Model) -> None:
+        super().__init__(model=model)
+        self.token_bytes = StringGrammar.load_vocabulary(
+            model.get_path_to_vocab_file()
         )
 
     @staticmethod
@@ -35,7 +29,7 @@ class ArgumentGenerator:
         arguments: object,
         function: Function,
     ) -> dict[str, object]:
-        """Verify the generated object matches the function schema."""
+        """Verify every generated value matches the function schema."""
         if not isinstance(arguments, dict):
             raise ValueError("Generated arguments must be a JSON object")
 
@@ -74,38 +68,91 @@ class ArgumentGenerator:
 
         return validated
 
+    def generate_string(self, context_ids: list[int]) -> str:
+        """Select only tokens preserving a valid JSON string prefix."""
+        grammar = StringGrammar()
+        progress = b""
+        generated_ids: list[int] = []
+
+        for _ in range(256):
+            logits = self.model.get_logits_from_input_ids(
+                context_ids + generated_ids
+            )
+            candidates = (
+                token_id
+                for token_id in self.token_bytes
+                if token_id < len(logits)
+            )
+
+            next_token_id = None
+            for token_id in sorted(
+                candidates, key=logits.__getitem__, reverse=True,
+            ):
+                if grammar.status(
+                    progress + self.token_bytes[token_id]
+                ) != -2:
+                    next_token_id = token_id
+                    break
+
+            if next_token_id is None:
+                raise ValueError("No valid string token available")
+
+            generated_ids.append(next_token_id)
+            progress += self.token_bytes[next_token_id]
+
+            if grammar.status(progress) == 0:
+                return json.loads(progress.decode("utf-8"))
+
+        raise ValueError("String exceeded the 256-token limit")
+
+    def generate_unconstrained(self, context_ids: list[int]) -> object:
+        """Generate a raw scalar until a JSON separator follows it."""
+        generated_ids: list[int] = []
+        decoder = json.JSONDecoder()
+
+        for _ in range(128):
+            logits = self.model.get_logits_from_input_ids(
+                context_ids + generated_ids
+            )
+            next_token_id = max(
+                range(len(logits)), key=logits.__getitem__,
+            )
+            generated_ids.append(next_token_id)
+            text = self.model.decode(generated_ids).lstrip()
+
+            try:
+                value, end = decoder.raw_decode(text)
+            except json.JSONDecodeError:
+                continue
+
+            remaining = text[end:]
+            if remaining.startswith((",", "}", "\n", "\r")):
+                return value
+            if remaining.lstrip(" \t").startswith((",", "}", "\n", "\r")):
+                return value
+
+        raise ValueError("Scalar exceeded the 128-token limit")
+
     def generate(
         self,
         prompt: Prompt,
         function: Function,
     ) -> dict[str, object]:
-        """Generate and validate one complete JSON argument object."""
-        if not function.parameters:
-            return {}
+        """Generate every parameter, then build a Python dictionary."""
+        arguments: dict[str, object] = {}
+        builder = ContextBuilder(functions=[function])
 
-        context = self.create_argument_context(prompt, function)
-        context_ids = self.model.encode(context)[0].tolist()
-        generated_ids: list[int] = []
-        decoder = json.JSONDecoder()
-        for _ in range(256):
-            logits = self.model.get_logits_from_input_ids(
-                context_ids + generated_ids
+        for name, definition in function.parameters.items():
+            context = builder.build_argument_context(
+                prompt, function, name, arguments,
             )
-            next_token_id = max(
-                range(len(logits)),
-                key=lambda token_id: logits[token_id],
-            )
-            generated_ids.append(next_token_id)
+            context_ids = self.model.encode(context)[0].tolist()
 
-            candidate = "{" + self.model.decode(generated_ids)
+            if definition.type == "string":
+                value = self.generate_string(context_ids)
+            else:
+                value = self.generate_unconstrained(context_ids)
 
-            try:
-                arguments, _ = decoder.raw_decode(candidate)
-            except json.JSONDecodeError:
-                continue
+            arguments[name] = value
 
-            return self.validate_arguments(arguments, function)
-
-        raise ValueError(
-            "Argument generation exceeded the 256-token limit"
-        )
+        return self.validate_arguments(arguments, function)
