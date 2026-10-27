@@ -7,6 +7,7 @@ from llm_sdk import Small_LLM_Model
 
 from .model.context_builder import ContextBuilder
 from .model.models import Function, Prompt
+from .token_utils import allowed_ids_for_position
 
 
 class ArgumentGenerator:
@@ -17,24 +18,6 @@ class ArgumentGenerator:
         model: Small_LLM_Model,
     ) -> None:
         self.model = model
-
-    @staticmethod
-    def allowed_ids_for_position(
-        token_sequences: dict[int, list[int]],
-        position: int,
-    ) -> list[int]:
-        """Return token IDs allowed at one candidate position."""
-        allowed_ids: list[int] = []
-
-        for tokens in token_sequences.values():
-            if len(tokens) <= position:
-                continue
-
-            token_id = tokens[position]
-            if token_id not in allowed_ids:
-                allowed_ids.append(token_id)
-
-        return allowed_ids
 
     @staticmethod
     def extract_numbers(
@@ -114,11 +97,8 @@ class ArgumentGenerator:
 
         while candidates:
             position = len(generated_ids)
-            allowed_ids = self.allowed_ids_for_position(
-                {
-                    key: tokens
-                    for key, (_, tokens) in candidates.items()
-                },
+            allowed_ids = allowed_ids_for_position(
+                (tokens for _, tokens in candidates.values()),
                 position,
             )
 
