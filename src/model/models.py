@@ -1,12 +1,12 @@
 from pydantic import BaseModel, Field
 from pydantic import ConfigDict
-from typing import Literal, Any
+from typing import Any
 
 
 class Type(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    type: Literal["string", "number", "boolean"]
+    type: str
 
 
 class Function(BaseModel):
