@@ -94,7 +94,7 @@ class JsonArgumentsGrammar(BaseModel):
                         return "incomplete", pos
                     pos += 5
                     continue
-                if escaped not in b'"\/bfnrt':
+                if escaped not in b'"\\/bfnrt':
                     return "invalid", pos
             elif char < 32:
                 return "invalid", pos
