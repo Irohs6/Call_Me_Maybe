@@ -2,7 +2,11 @@
 
 import unittest
 
-from src.json_grammar import JsonGrammar, JsonStringParser
+from src.json_grammar import (
+    JsonGrammar,
+    JsonNumberParser,
+    JsonStringParser,
+)
 
 
 class JsonGrammarTests(unittest.TestCase):
@@ -105,6 +109,55 @@ class JsonGrammarTests(unittest.TestCase):
         for text in incomplete:
             with self.subTest(text=text):
                 self.assertEqual(self.grammar.status(text), -1)
+
+    def test_complete_number_values(self) -> None:
+        numbers = (
+            "0", "-0", "1", "-1", "123456",
+            "0.5", "-0.75", "12.0", "1e2", "1E-2",
+            "12.45e+6", "-1.2E-10",
+        )
+        for number in numbers:
+            for suffix in ("}", " }", ',"other":"ok"}'):
+                text = '{"value":' + number + suffix
+                with self.subTest(text=text):
+                    self.assertEqual(self.grammar.status(text), 0)
+
+    def test_incomplete_number_values(self) -> None:
+        numbers = (
+            "-", "1", "-12", "0", "-0",
+            "1.", "-1.2", "1e", "1e+", "1E-",
+            "1.25e", "1.25e-",
+        )
+        for number in numbers:
+            text = '{"value":' + number
+            with self.subTest(text=text):
+                self.assertEqual(self.grammar.status(text), -1)
+
+    def test_invalid_number_values(self) -> None:
+        numbers = (
+            "+1", ".5", "--1", "-.5", "01", "-01",
+            "1..2", "1.e2", "1e}", "1e+}",
+            "2e--3", "1.2.3", "NaN", "Infinity",
+            "0x10", "1a", "1e2e3", "1,", "-}",
+        )
+        for number in numbers:
+            text = '{"value":' + number + "}"
+            with self.subTest(text=text):
+                self.assertEqual(self.grammar.status(text), -2)
+
+    def test_number_parser_keeps_own_state(self) -> None:
+        parser = JsonNumberParser()
+        for char in "-12.3e+4":
+            self.assertEqual(parser.read(char), -1)
+        self.assertEqual(parser.read("}"), 0)
+        self.assertEqual(parser.read("1"), -2)
+
+    def test_number_followed_by_whitespace_and_next_key(self) -> None:
+        text = '{"a": 42 \n, "b": -0.125E+3}'
+        self.assertEqual(self.grammar.status(text), 0)
+        for i in range(len(text) + 1):
+            with self.subTest(prefix=text[:i]):
+                self.assertNotEqual(self.grammar.status(text[:i]), -2)
 
     def test_invalid_string_values(self) -> None:
         invalid = (
