@@ -287,6 +287,8 @@ class JsonBooleanParser(BaseModel):
 
     def read_end(self) -> int:
         """A boolean is complete only after every expected letter."""
+        if self.state != "literal":
+            return -2
         if self.position != len(self.expected):
             return -2
         self.state = "done"
