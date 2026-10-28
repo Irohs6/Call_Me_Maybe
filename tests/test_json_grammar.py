@@ -2,7 +2,7 @@
 
 import unittest
 
-from src.json_grammar import JsonGrammar
+from src.json_grammar import JsonGrammar, JsonStringParser
 
 
 class JsonGrammarTests(unittest.TestCase):
@@ -35,12 +35,37 @@ class JsonGrammarTests(unittest.TestCase):
                 self.assertEqual(self.grammar.status(text), -2)
 
     def test_escape_helpers(self) -> None:
+        parser = JsonStringParser()
         for char in ('"', '\\', '/', 'b', 'f', 'n', 'r', 't'):
             with self.subTest(char=char):
-                self.assertTrue(self.grammar.is_valid_escape(char))
-        self.assertFalse(self.grammar.is_valid_escape('x'))
-        self.assertTrue(self.grammar.is_hex_digit('F'))
-        self.assertFalse(self.grammar.is_hex_digit('g'))
+                self.assertTrue(parser.is_valid_escape(char))
+        self.assertFalse(parser.is_valid_escape('x'))
+        self.assertTrue(parser.is_hex_digit('F'))
+        self.assertFalse(parser.is_hex_digit('g'))
+
+    def test_string_parser_keeps_own_state(self) -> None:
+        parser = JsonStringParser()
+        self.assertEqual(parser.read('"'), -1)
+        self.assertEqual(parser.read('H'), -1)
+        self.assertEqual(parser.read('\\'), -1)
+        self.assertEqual(parser.read('u'), -1)
+        for digit in '0041':
+            self.assertEqual(parser.read(digit), -1)
+        self.assertEqual(parser.read('"'), 0)
+        self.assertEqual(parser.read('x'), -2)
+
+    def test_string_parser_rejects_bad_escapes(self) -> None:
+        parser = JsonStringParser()
+        self.assertEqual(parser.read('"'), -1)
+        self.assertEqual(parser.read('\\'), -1)
+        self.assertEqual(parser.read('x'), -2)
+
+    def test_repeated_grammar_checks_restart_strings(self) -> None:
+        text = '{"a":"hello","b":"world"}'
+        for i in range(len(text) + 1):
+            self.assertNotEqual(self.grammar.status(text[:i]), -2)
+        self.assertEqual(self.grammar.status(text), 0)
+        self.assertEqual(self.grammar.status('{"c":"ok"}'), 0)
 
     def test_comma_requires_key(self) -> None:
         self.assertEqual(self.grammar.read_after_value(','), 'key_required')
