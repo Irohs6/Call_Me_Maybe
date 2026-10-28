@@ -3,6 +3,7 @@
 import unittest
 
 from src.json_grammar import (
+    JsonBooleanParser,
     JsonGrammar,
     JsonNumberParser,
     JsonStringParser,
@@ -158,6 +159,73 @@ class JsonGrammarTests(unittest.TestCase):
         for i in range(len(text) + 1):
             with self.subTest(prefix=text[:i]):
                 self.assertNotEqual(self.grammar.status(text[:i]), -2)
+
+    def test_complete_boolean_values(self) -> None:
+        valid = (
+            '{"enabled":true}',
+            '{"enabled":false}',
+            '{ "enabled" : true }',
+            '{"enabled":false,"active":true}',
+            '{"enabled":false, "count":12, "name":"test"}',
+            '{"enabled":true \n , "active":false}',
+        )
+        for text in valid:
+            with self.subTest(text=text):
+                self.assertEqual(self.grammar.status(text), 0)
+
+    def test_incomplete_boolean_values(self) -> None:
+        prefixes = (
+            '{"enabled":t',
+            '{"enabled":tr',
+            '{"enabled":tru',
+            '{"enabled":true',
+            '{"enabled":f',
+            '{"enabled":fa',
+            '{"enabled":fal',
+            '{"enabled":fals',
+            '{"enabled":false',
+            '{"enabled":false,',
+        )
+        for text in prefixes:
+            with self.subTest(text=text):
+                self.assertEqual(self.grammar.status(text), -1)
+
+    def test_invalid_boolean_values(self) -> None:
+        invalid = (
+            '{"enabled":True}',
+            '{"enabled":FALSE}',
+            '{"enabled":tru}',
+            '{"enabled":fals}',
+            '{"enabled":truth}',
+            '{"enabled":falsee}',
+            '{"enabled":truefalse}',
+            '{"enabled":t2}',
+            '{"enabled":false,}',
+            '{"enabled":true "other":false}',
+            '{"enabled":true.0}',
+        )
+        for text in invalid:
+            with self.subTest(text=text):
+                self.assertEqual(self.grammar.status(text), -2)
+
+    def test_boolean_parser_keeps_own_state(self) -> None:
+        for literal in ("true", "false"):
+            parser = JsonBooleanParser()
+            for char in literal:
+                self.assertEqual(parser.read(char), -1)
+            self.assertEqual(parser.read("}"), 0)
+            self.assertEqual(parser.read("x"), -2)
+
+    def test_boolean_parser_requires_literal_before_separator(self) -> None:
+        parser = JsonBooleanParser()
+        self.assertEqual(parser.read("}"), -2)
+
+    def test_boolean_prefixes_reparse_from_start(self) -> None:
+        text = '{"enabled":true,"disabled":false}'
+        for index in range(len(text) + 1):
+            with self.subTest(prefix=text[:index]):
+                self.assertNotEqual(self.grammar.status(text[:index]), -2)
+        self.assertEqual(self.grammar.status(text), 0)
 
     def test_invalid_string_values(self) -> None:
         invalid = (
