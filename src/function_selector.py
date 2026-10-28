@@ -3,13 +3,16 @@
 from collections.abc import Iterable
 
 from llm_sdk import Small_LLM_Model
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 from .model.models import Function
 
 
 class FunctionSelector(BaseModel):
     """Select one function through constrained decoding."""
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
     model: Small_LLM_Model
     functions: list[Function]
 
