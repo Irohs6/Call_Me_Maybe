@@ -3,19 +3,18 @@
 import json
 
 from llm_sdk import Small_LLM_Model
+from pydantic import BaseModel, ConfigDict
 
 from .model.context_builder import ContextBuilder
 from .model.models import Function, Prompt
 
 
-class ArgumentGenerator:
+class ArgumentGenerator(BaseModel):
     """Generate every argument in a single JSON sequence."""
 
-    def __init__(
-        self,
-        model: Small_LLM_Model,
-    ) -> None:
-        self.model = model
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    model: Small_LLM_Model
 
     @staticmethod
     def create_argument_context(
