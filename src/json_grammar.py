@@ -90,6 +90,166 @@ class JsonStringParser(BaseModel):
         return -2
 
 
+class JsonNumberParser(BaseModel):
+    """Parse one JSON number, keeping its numeric state."""
+
+    state: str = "start"
+
+    @staticmethod
+    def is_negative_sign(char: str) -> bool:
+        """Check for the minus sign."""
+        return char == "-"
+
+    @staticmethod
+    def is_digit(char: str) -> bool:
+        """Recognize digits from zero to nine."""
+        return char in "0123456789"
+
+    @staticmethod
+    def is_non_zero_digit(char: str) -> bool:
+        """Recognize digits from one to nine."""
+        return char in "123456789"
+
+    @staticmethod
+    def is_decimal_point(char: str) -> bool:
+        """Check for the decimal point."""
+        return char == "."
+
+    @staticmethod
+    def is_exponent(char: str) -> bool:
+        """Check for the exponent marker."""
+        return char in ("e", "E")
+
+    @staticmethod
+    def is_exponent_sign(char: str) -> bool:
+        """Check for an optional exponent sign."""
+        return char in ("+", "-")
+
+    @staticmethod
+    def is_terminator(char: str) -> bool:
+        """Recognize separators following a completed number."""
+        return char in (" ", "\t", "\r", "\n", ",", "}")
+
+    @staticmethod
+    def is_number_start(char: str) -> bool:
+        """Recognize the possible first characters of a number."""
+        return char == "-" or char in "0123456789"
+
+    def read_start(self, char: str) -> int:
+        """Start an integer, possibly with a minus sign."""
+        if self.is_negative_sign(char):
+            self.state = "sign"
+        elif char == "0":
+            self.state = "zero"
+        elif self.is_non_zero_digit(char):
+            self.state = "integer"
+        else:
+            return -2
+        return -1
+
+    def read_sign(self, char: str) -> int:
+        """Require a digit after the minus sign."""
+        if char == "0":
+            self.state = "zero"
+        elif self.is_non_zero_digit(char):
+            self.state = "integer"
+        else:
+            return -2
+        return -1
+
+    def read_zero(self, char: str) -> int:
+        """Prevent leading zeros and accept decimals or exponents."""
+        if self.is_decimal_point(char):
+            self.state = "fraction_start"
+        elif self.is_exponent(char):
+            self.state = "exponent_start"
+        else:
+            return -2
+        return -1
+
+    def read_integer(self, char: str) -> int:
+        """Read the integer digits."""
+        if self.is_digit(char):
+            return -1
+        if self.is_decimal_point(char):
+            self.state = "fraction_start"
+        elif self.is_exponent(char):
+            self.state = "exponent_start"
+        else:
+            return -2
+        return -1
+
+    def read_fraction_start(self, char: str) -> int:
+        """Require a digit immediately after a decimal point."""
+        if not self.is_digit(char):
+            return -2
+        self.state = "fraction"
+        return -1
+
+    def read_fraction(self, char: str) -> int:
+        """Read fraction digits and an optional exponent."""
+        if self.is_digit(char):
+            return -1
+        if not self.is_exponent(char):
+            return -2
+        self.state = "exponent_start"
+        return -1
+
+    def read_exponent_start(self, char: str) -> int:
+        """Accept an exponent sign or its first digit."""
+        if self.is_exponent_sign(char):
+            self.state = "exponent_sign"
+        elif self.is_digit(char):
+            self.state = "exponent_digits"
+        else:
+            return -2
+        return -1
+
+    def read_exponent_sign(self, char: str) -> int:
+        """Require a digit after the optional exponent sign."""
+        if not self.is_digit(char):
+            return -2
+        self.state = "exponent_digits"
+        return -1
+
+    def read_exponent_digits(self, char: str) -> int:
+        """Continue reading exponent digits."""
+        return -1 if self.is_digit(char) else -2
+
+    def can_finish(self) -> bool:
+        """A number must have a complete integer, fraction or exponent."""
+        return self.state in (
+            "zero", "integer", "fraction", "exponent_digits",
+        )
+
+    def read(self, char: str) -> int:
+        """Return 0 on a separator, -1 incomplete, -2 invalid."""
+        if self.is_terminator(char):
+            if not self.can_finish():
+                return -2
+            self.state = "done"
+            return 0
+        if self.state == "start":
+            return self.read_start(char)
+        if self.state == "sign":
+            return self.read_sign(char)
+        if self.state == "zero":
+            return self.read_zero(char)
+        if self.state == "integer":
+            return self.read_integer(char)
+        if self.state == "fraction_start":
+            return self.read_fraction_start(char)
+        if self.state == "fraction":
+            return self.read_fraction(char)
+        if self.state == "exponent_start":
+            return self.read_exponent_start(char)
+        if self.state == "exponent_sign":
+            return self.read_exponent_sign(char)
+        if self.state == "exponent_digits":
+            return self.read_exponent_digits(char)
+        return -2
+
+
 class JsonGrammar(BaseModel):
     """Check JSON object structure with string keys and values."""
 
@@ -136,9 +296,11 @@ class JsonGrammar(BaseModel):
 
     @staticmethod
     def read_value(char: str) -> str:
-        """Begin a string value; other types will come later."""
+        """Begin a string or number value."""
         if JsonStringParser.is_quote(char):
             return "string_value"
+        if JsonNumberParser.is_number_start(char):
+            return "number_value"
         return "invalid"
 
     @staticmethod
@@ -177,6 +339,7 @@ class JsonGrammar(BaseModel):
         """Return 0 complete, -1 incomplete, -2 invalid."""
         state = "start"
         string_parser = JsonStringParser()
+        number_parser = JsonNumberParser()
 
         for char in text:
             if self.can_skip_whitespace(state, char):
@@ -192,11 +355,26 @@ class JsonGrammar(BaseModel):
                     )
                 continue
 
+            if state == "number_value":
+                result = number_parser.read(char)
+                if result == -2:
+                    return -2
+                if result == 0:
+                    state = "after_value"
+                    if not self.is_whitespace(char):
+                        state = self.read_after_value(char)
+                if state == "invalid":
+                    return -2
+                continue
+
             state = self.next_state(state, char)
             if state == "invalid":
                 return -2
             if state in ("key", "string_value"):
                 string_parser = JsonStringParser()
                 string_parser.read(char)
+            elif state == "number_value":
+                number_parser = JsonNumberParser()
+                number_parser.read(char)
 
         return 0 if state == "done" else -1
