@@ -250,8 +250,63 @@ class JsonNumberParser(BaseModel):
         return -2
 
 
+class JsonBooleanParser(BaseModel):
+    """Parse one JSON boolean, keeping its position in true or false."""
+
+    state: str = "start"
+    expected: str = ""
+    position: int = 0
+
+    @staticmethod
+    def is_boolean_start(char: str) -> bool:
+        """Recognize the first character of true or false."""
+        return char in ("t", "f")
+
+    @staticmethod
+    def is_terminator(char: str) -> bool:
+        """Recognize separators following a complete boolean."""
+        return char in (" ", "\t", "\r", "\n", ",", "}")
+
+    def read_start(self, char: str) -> int:
+        """Choose the boolean literal from its first character."""
+        if not self.is_boolean_start(char):
+            return -2
+        self.expected = "true" if char == "t" else "false"
+        self.position = 1
+        self.state = "literal"
+        return -1
+
+    def read_literal(self, char: str) -> int:
+        """Require the next character of the expected literal."""
+        if self.position >= len(self.expected):
+            return -2
+        if char != self.expected[self.position]:
+            return -2
+        self.position += 1
+        return -1
+
+    def read_end(self) -> int:
+        """A boolean is complete only after every expected letter."""
+        if self.position != len(self.expected):
+            return -2
+        self.state = "done"
+        return 0
+
+    def read(self, char: str) -> int:
+        """Return 0 on a separator, -1 incomplete, -2 invalid."""
+        if self.state == "done":
+            return -2
+        if self.is_terminator(char):
+            return self.read_end()
+        if self.state == "start":
+            return self.read_start(char)
+        if self.state == "literal":
+            return self.read_literal(char)
+        return -2
+
+
 class JsonGrammar(BaseModel):
-    """Check JSON objects with string keys and string/number values."""
+    """Check JSON objects with string keys and primitive values."""
 
     @staticmethod
     def is_whitespace(char: str) -> bool:
@@ -296,11 +351,13 @@ class JsonGrammar(BaseModel):
 
     @staticmethod
     def read_value(char: str) -> str:
-        """Begin a string or number value."""
+        """Begin a string, number or boolean value."""
         if JsonStringParser.is_quote(char):
             return "string_value"
         if JsonNumberParser.is_number_start(char):
             return "number_value"
+        if JsonBooleanParser.is_boolean_start(char):
+            return "boolean_value"
         return "invalid"
 
     @staticmethod
@@ -340,6 +397,7 @@ class JsonGrammar(BaseModel):
         state = "start"
         string_parser = JsonStringParser()
         number_parser = JsonNumberParser()
+        boolean_parser = JsonBooleanParser()
 
         for char in text:
             if self.can_skip_whitespace(state, char):
@@ -355,8 +413,12 @@ class JsonGrammar(BaseModel):
                     )
                 continue
 
-            if state == "number_value":
-                result = number_parser.read(char)
+            if state in ("number_value", "boolean_value"):
+                parser = (
+                    number_parser if state == "number_value"
+                    else boolean_parser
+                )
+                result = parser.read(char)
                 if result == -2:
                     return -2
                 if result == 0:
@@ -376,5 +438,8 @@ class JsonGrammar(BaseModel):
             elif state == "number_value":
                 number_parser = JsonNumberParser()
                 number_parser.read(char)
+            elif state == "boolean_value":
+                boolean_parser = JsonBooleanParser()
+                boolean_parser.read(char)
 
         return 0 if state == "done" else -1
