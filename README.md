@@ -6,7 +6,7 @@
 
 Call Me Maybe is a Python function-calling project based on the Qwen3-0.6B language model and the provided `llm_sdk`. It reads natural-language requests and function definitions, chooses a suitable function, and extracts its typed arguments. The application writes one JSON output file with the original prompt, function name and parameters.
 
-**Project status:** Work in progress. Function-name selection uses constrained token choices; argument generation currently uses greedy token selection followed by JSON parsing and type validation. Full token-level JSON/schema constraints for arguments are **not yet connected**. The `test-json-structure-methods` branch includes an experimental `JsonGrammar` and `JsonStringParser` for JSON objects with string values. The parser does not yet handle numeric or boolean values.
+**Project status:** Work in progress. Function-name selection uses constrained token choices; argument generation currently uses greedy token selection followed by JSON parsing and type validation. Full token-level JSON/schema constraints for arguments are **not yet connected**. The `test-json-structure-methods` branch includes an experimental `JsonGrammar`, `JsonStringParser` and `JsonNumberParser`. It supports string keys, string values and JSON numbers (including decimals and exponents), but not boolean values or schema-aware key/type restrictions yet.
 
 ## Instructions
 
@@ -54,7 +54,7 @@ Other Makefile targets: `make debug`, `make clean`, `make lint` and optional `ma
 - `ContextBuilder` assembles the language-model prompts.
 - `FunctionSelector` selects only among the provided function names.
 - `ArgumentGenerator` handles the parameters in one generation pass.
-- `JsonGrammar` manages object structure; `JsonStringParser` keeps its own escape/Unicode state for both keys and string values.
+- `JsonGrammar` manages object structure; `JsonStringParser` keeps its own escape/Unicode state for keys and string values; `JsonNumberParser` handles numeric states including signs, decimals, and exponents.
 - Pydantic models validate input and output structures. The `Small_LLM_Model` wrapper is used through its public methods.
 
 ## Example usage
@@ -97,7 +97,7 @@ The subject targets at least 90% correct function selection and argument extract
 
 - Qwen tokens can span multiple text characters, and UTF-8 characters may be split across tokens.
 - JSON escapes such as `\u0041` must be accepted as incomplete prefixes until all four hexadecimal digits are present.
-- Numeric values require a reliable end-of-value rule.
+- Numeric values require a reliable end-of-value rule; the number parser now passes the separator back to the object grammar to avoid losing commas or closing braces.
 - The current post-generation validation cannot substitute for excluding invalid token IDs during generation.
 
 ## Resources
