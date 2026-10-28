@@ -1,4 +1,4 @@
-"""Read JSON object structure and strings one character at a time."""
+"""Read JSON object, string and number syntax one character at a time."""
 
 from pydantic import BaseModel
 
@@ -251,7 +251,7 @@ class JsonNumberParser(BaseModel):
 
 
 class JsonGrammar(BaseModel):
-    """Check JSON object structure with string keys and values."""
+    """Check JSON objects with string keys and string/number values."""
 
     @staticmethod
     def is_whitespace(char: str) -> bool:
