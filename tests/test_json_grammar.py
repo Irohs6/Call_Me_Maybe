@@ -48,9 +48,54 @@ class JsonGrammarTests(unittest.TestCase):
         self.assertEqual(self.grammar.read_key_required('}'), 'invalid')
         self.assertEqual(self.grammar.read_key_required('"'), 'key')
 
-    def test_value_is_explicitly_not_implemented(self) -> None:
-        with self.assertRaises(NotImplementedError):
-            self.grammar.status('{"name": "Iroh"}')
+    def test_complete_string_values(self) -> None:
+        valid = (
+            '{"name":"Iroh"}',
+            '{ "name" : "Iroh" }',
+            '{"name":""}',
+            '{"name":"Iroh","city":"Mulhouse"}',
+            r'{"name":"Hello \"Iroh\""}',
+            r'{"name":"C:\\Users\\Iroh"}',
+            r'{"name":"line\nnext"}',
+            r'{"name":"\u0041"}',
+            r'{"na\u006de":"Iroh"}',
+            '{"name":"é😀"}',
+        )
+        for text in valid:
+            with self.subTest(text=text):
+                self.assertEqual(self.grammar.status(text), 0)
+
+    def test_incomplete_string_values(self) -> None:
+        incomplete = (
+            '{"name":',
+            '{"name":"',
+            '{"name":"Iroh',
+            '{"name":"Iroh"',
+            '{"name":"Iroh",',
+            '{"name":"Iroh","age":"',
+            '{"name":"Iroh' + "\\",
+            r'{"name":"\u00',
+            r'{"name":"\u0041',
+        )
+        for text in incomplete:
+            with self.subTest(text=text):
+                self.assertEqual(self.grammar.status(text), -1)
+
+    def test_invalid_string_values(self) -> None:
+        invalid = (
+            '{"name":Iroh}',
+            '{"name":}',
+            '{"name":"bad\ntext"}',
+            '{"name":"bad\ttab"}',
+            r'{"name":"\x"}',
+            r'{"name":"\u0X41"}',
+            '{"name":"ok" "age":"33"}',
+            '{"name":"ok",}',
+            '{"name":"ok"}extra',
+        )
+        for text in invalid:
+            with self.subTest(text=text):
+                self.assertEqual(self.grammar.status(text), -2)
 
 
 if __name__ == '__main__':
