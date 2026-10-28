@@ -4,7 +4,7 @@ from pydantic import BaseModel
 
 
 class JsonGrammar(BaseModel):
-    """Check JSON object prefixes (value parsing is not implemented yet)."""
+    """Check JSON object prefixes, with string values supported."""
 
     @staticmethod
     def is_whitespace(char: str) -> bool:
@@ -91,6 +91,30 @@ class JsonGrammar(BaseModel):
         """Require a colon between a key and its value."""
         return "value" if char == ":" else "invalid"
 
+    def read_value(self, char: str) -> str:
+        """Start a JSON string value (other value types come later)."""
+        if self.is_quote(char):
+            return "string_value"
+        return "invalid"
+
+    def read_string_value(self, char: str) -> str:
+        """Read characters until the closing unescaped quote."""
+        if self.is_quote(char):
+            return "after_value"
+        if self.is_escape(char):
+            return "escape_string"
+        if self.is_control_character(char):
+            return "invalid"
+        return "string_value"
+
+    def read_escape_string(self, char: str) -> str:
+        """Read one escape sequence inside a string value."""
+        if self.is_valid_escape(char):
+            return "string_value"
+        if self.is_unicode_escape(char):
+            return "unicode_string"
+        return "invalid"
+
     @staticmethod
     def read_after_value(char: str) -> str:
         """Accept a comma or the end of an object after a value."""
@@ -119,6 +143,12 @@ class JsonGrammar(BaseModel):
             return self.read_escape_key(char)
         if state == "colon":
             return self.read_colon(char)
+        if state == "value":
+            return self.read_value(char)
+        if state == "string_value":
+            return self.read_string_value(char)
+        if state == "escape_string":
+            return self.read_escape_string(char)
         if state == "after_value":
             return self.read_after_value(char)
         if state == "done":
@@ -134,21 +164,21 @@ class JsonGrammar(BaseModel):
             if self.can_skip_whitespace(state, char):
                 continue
 
-            if state == "value":
-                raise NotImplementedError("Value parsing is not implemented")
-
-            if state == "unicode_key":
+            if state in ("unicode_key", "unicode_string"):
                 if not self.is_hex_digit(char):
                     return -2
                 unicode_count += 1
                 if unicode_count == 4:
-                    state = "key"
+                    state = (
+                        "key" if state == "unicode_key"
+                        else "string_value"
+                    )
                 continue
 
             state = self.next_state(state, char)
             if state == "invalid":
                 return -2
-            if state == "unicode_key":
+            if state in ("unicode_key", "unicode_string"):
                 unicode_count = 0
 
         return 0 if state == "done" else -1
