@@ -128,7 +128,7 @@ class ParametersGeneratorTests(unittest.TestCase):
     def test_raises_when_no_valid_token_exists(self) -> None:
         model = self.fake_model(
             tokens={9: "{", 0: '"bad":2}'},
-            scores=[[15, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]],
+            scores=[[15, 0, 0, 0, 0, 0, 0, 0, 0, 0]],
         )
         with self.assertRaisesRegex(ValueError, "No token"):
             ParametersGenerator().generate(
