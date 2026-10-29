@@ -6,7 +6,7 @@
 
 Call Me Maybe is a Python function-calling project based on the Qwen3-0.6B language model and the provided `llm_sdk`. It reads natural-language requests and function definitions, chooses a suitable function, and extracts its typed arguments. The application writes one JSON output file with the original prompt, function name and parameters.
 
-**Project status:** Work in progress. Function-name selection uses constrained token choices; argument generation currently uses greedy token selection followed by JSON parsing and type validation. Full token-level JSON/schema constraints for arguments are **not yet connected**. The `test-json-structure-methods` branch includes experimental `JsonGrammar`, `JsonStringParser`, `JsonNumberParser` and `JsonBooleanParser` classes. It supports string keys and string, number and boolean values (`true`/`false`). When constructed with `JsonGrammar(parameters=function.parameters)`, it also restricts keys and primitive types to the function schema. It is not yet connected to token selection in `ArgumentGenerator`.
+**Project status:** Work in progress. Function-name selection uses constrained token choices; argument generation currently uses greedy token selection followed by JSON parsing and type validation. Full token-level JSON/schema constraints for arguments are **not yet connected**. The `test-json-structure-methods` branch completes the original `JsonChecker` class. Its single state machine checks JSON object syntax, required keys, and string, number, integer and boolean types. Pass a mapping such as `JsonChecker(parameters={name: definition.type for name, definition in function.parameters.items()})`. This checker is not yet connected to token selection in `ArgumentGenerator`.
 
 ## Instructions
 
@@ -47,14 +47,14 @@ Other Makefile targets: `make debug`, `make clean`, `make lint` and optional `ma
 4. Build a separate context for the selected function's arguments; currently generate the JSON argument object greedily and verify the parsed types after generation.
 5. Produce a `FunctionCall` object and serialize all results into one JSON array.
 
-**Planned constrained decoding:** At each argument-generation step, obtain candidate token representations from the vocabulary, reject tokens that would violate the JSON prefix or the expected parameter names/types, and choose among the remaining valid tokens. The in-progress JSON string parser can distinguish complete, incomplete and invalid prefixes. This is not yet integrated with `ArgumentGenerator`.
+**Planned constrained decoding:** At each argument-generation step, obtain candidate token representations from the vocabulary, reject tokens that would violate the JSON prefix or the expected parameter names/types, and choose among the remaining valid tokens. The `JsonChecker.status()` method distinguishes complete, incomplete and invalid JSON prefixes. This is not yet integrated with `ArgumentGenerator`.
 
 ## Design decisions
 
 - `ContextBuilder` assembles the language-model prompts.
 - `FunctionSelector` selects only among the provided function names.
 - `ArgumentGenerator` handles the parameters in one generation pass.
-- `JsonGrammar` manages object structure and required schema keys/types; `JsonStringParser` handles escaped strings, `JsonNumberParser` handles numeric states (including strict integers), and `JsonBooleanParser` validates `true` and `false` character by character.
+- `JsonChecker` keeps the original `for t in text` state machine and delegates primitive-prefix validation to its `check_string`, `check_number` and `check_boolean` methods. It enforces required parameter names and types.
 - Pydantic models validate input and output structures. The `Small_LLM_Model` wrapper is used through its public methods.
 
 ## Example usage
@@ -79,7 +79,7 @@ Expected output shape (illustrative, not a recorded model result):
 
 ## Testing strategy
 
-Run the JSON grammar unit tests:
+Run the JSON checker unit tests:
 
 ```bash
 uv run python -m unittest discover -s tests
@@ -97,7 +97,7 @@ The subject targets at least 90% correct function selection and argument extract
 
 - Qwen tokens can span multiple text characters, and UTF-8 characters may be split across tokens.
 - JSON escapes such as `\u0041` must be accepted as incomplete prefixes until all four hexadecimal digits are present.
-- Numeric values require a reliable end-of-value rule; the number parser now passes the separator back to the object grammar to avoid losing commas or closing braces.
+- JSON numbers require a separator to finish; `JsonChecker` handles this inside the original state machine.
 - The current post-generation validation cannot substitute for excluding invalid token IDs during generation.
 
 ## Resources
