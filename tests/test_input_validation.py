@@ -55,6 +55,37 @@ class InputValidationTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Duplicate function"):
             JsonParser().load_functions(self.path)
 
+    def test_duplicate_parameter_json_keys_are_rejected(self) -> None:
+        self.path.write_text(
+            '[{"name":"fn_add_numbers","description":"Add numbers",'
+            '"parameters":{"b":{"type":"number"},'
+            '"b":{"type":"number"}},'
+            '"returns":{"type":"number"}}]',
+            encoding="utf-8",
+        )
+        with self.assertRaisesRegex(ValueError, "Duplicate JSON key: 'b'"):
+            JsonParser().load_functions(self.path)
+
+    def test_duplicate_escaped_json_keys_are_rejected(self) -> None:
+        path = Path(self.tempdir.name) / "prompts.json"
+        path.write_text(
+            r'[{"prompt":"first","\u0070rompt":"second"}]',
+            encoding="utf-8",
+        )
+        with self.assertRaisesRegex(
+            ValueError, "Duplicate JSON key: 'prompt'"
+        ):
+            JsonParser().load_prompts(path)
+
+    def test_same_json_key_in_different_objects_is_allowed(self) -> None:
+        path = Path(self.tempdir.name) / "prompts.json"
+        path.write_text(
+            '[{"prompt":"first"},{"prompt":"second"}]',
+            encoding="utf-8",
+        )
+        prompts = JsonParser().load_prompts(path)
+        self.assertEqual([item.prompt for item in prompts], ["first", "second"])
+
     def test_empty_function_list_is_rejected(self) -> None:
         self.save([])
         with self.assertRaisesRegex(ValueError, "No functions"):
