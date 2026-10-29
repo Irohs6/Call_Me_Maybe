@@ -6,7 +6,7 @@
 
 Call Me Maybe is a Python function-calling project based on the Qwen3-0.6B language model and the provided `llm_sdk`. It reads natural-language requests and function definitions, chooses a suitable function, and extracts its typed arguments. The application writes one JSON output file with the original prompt, function name and parameters.
 
-**Project status:** Work in progress. Function-name selection uses constrained token choices; argument generation currently uses greedy token selection followed by JSON parsing and type validation. Full token-level JSON/schema constraints for arguments are **not yet connected**. The `test-json-structure-methods` branch continues the original `JsonChecker` implementation. `JsonChecker` handles object structure and required keys/types. The three small parsers (`JsonStringParser`, `JsonNumberParser`, `JsonBooleanParser`) are in the **same `src/json_checker.py` file**, with explicit state methods such as `read_start` and `read_string`. Pass a mapping such as `JsonChecker(parameters={name: definition.type for name, definition in function.parameters.items()})`. It is not yet connected to token selection in `ArgumentGenerator`.
+**Project status:** Work in progress. Function-name selection and argument generation both use token-level constraints. Argument generation ranks vocabulary tokens by model logits and selects the first whose decoded prefix is accepted by `JsonChecker`. The implementation still requires end-to-end Qwen accuracy and speed benchmarks. The `test-json-structure-methods` branch continues the original `JsonChecker` implementation. `JsonChecker` handles object structure and required keys/types. The three small parsers (`JsonStringParser`, `JsonNumberParser`, `JsonBooleanParser`) are in the **same `src/json_checker.py` file**, with explicit state methods such as `read_start` and `read_string`. Pass a mapping such as `JsonChecker(parameters={name: definition.type for name, definition in function.parameters.items()})`. `ArgumentGenerator` now uses it to filter generated token candidates.
 
 ## Instructions
 
@@ -44,10 +44,10 @@ Other Makefile targets: `make debug`, `make clean`, `make lint` and optional `ma
 1. Read function definitions and prompts as JSON, then validate input objects with Pydantic.
 2. Build the Qwen/Hermes function-selection context listing the available function schemas.
 3. Encode available function names and choose the next token among their allowed token-ID prefixes, using the logits returned by the SDK.
-4. Build a separate context for the selected function's arguments; currently generate the JSON argument object greedily and verify the parsed types after generation.
+4. Build a separate context for the selected function's arguments. Rank vocabulary token IDs by logits, reject candidates for which `JsonChecker.status()` returns `-2`, and stop when the status becomes `0`. Validate the resulting arguments once more before output.
 5. Produce a `FunctionCall` object and serialize all results into one JSON array.
 
-**Planned constrained decoding:** At each argument-generation step, obtain candidate token representations from the vocabulary, reject tokens that would violate the JSON prefix or the expected parameter names/types, and choose among the remaining valid tokens. The `JsonChecker.status()` method distinguishes complete, incomplete and invalid JSON prefixes. This is not yet integrated with `ArgumentGenerator`.
+**Constrained decoding:** `ArgumentGenerator` loads the model vocabulary using the SDK, considers token IDs in descending logit order, decodes each candidate with the SDK, and uses `JsonChecker.status()` to reject invalid JSON/schema prefixes before selecting the token. Complete objects are parsed with `json.loads()` and checked against the schema.
 
 ## Design decisions
 
@@ -87,7 +87,7 @@ uv run python -m unittest discover -s tests
 
 Run `make lint` for style and static type checks. Then execute the model against the supplied example inputs and additional, changed function sets. Inspect each output file for valid JSON, exact required keys, schema-compatible parameter types and correct extracted values. Include string escapes, Unicode, missing files, malformed input, empty strings, negative and decimal numbers, boolean values and ambiguous prompts in manual tests.
 
-**Current limitation:** Passing parser unit tests does not establish end-to-end accuracy or full constrained-decoding compliance.
+**Current limitation:** Passing mocked-model and checker tests does not establish end-to-end Qwen accuracy, tokenization correctness for partial UTF-8 bytes, or compliance with the five-minute performance target.
 
 ## Performance analysis
 
@@ -98,7 +98,7 @@ The subject targets at least 90% correct function selection and argument extract
 - Qwen tokens can span multiple text characters, and UTF-8 characters may be split across tokens.
 - JSON escapes such as `\u0041` must be accepted as incomplete prefixes until all four hexadecimal digits are present.
 - JSON numbers require a separator to finish; `JsonChecker` handles this inside the original state machine.
-- The current post-generation validation cannot substitute for excluding invalid token IDs during generation.
+- The argument generator now filters invalid tokens during generation; post-generation validation remains a safety check. Full-model behavior and five-minute target must still be verified.
 
 ## Resources
 
