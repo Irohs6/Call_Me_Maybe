@@ -10,10 +10,10 @@ from .models import Function, Prompt
 
 class JsonParser(BaseModel):
     @staticmethod
-    def _unique_keys(pairs: list[tuple[str, object]]) -> dict[str, object]:
+    def _unique_keys(parameters: list[tuple[str, object]]) -> dict[str, object]:
         """Reject repeated keys before JSON objects become dictionaries."""
         values: dict[str, object] = {}
-        for key, value in pairs:
+        for key, value in parameters:
             if key in values:
                 raise ValueError(f"Duplicate JSON key: '{key}'")
             values[key] = value
