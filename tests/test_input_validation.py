@@ -1,8 +1,11 @@
 """Validate schema inputs and graceful CLI failures."""
 
+import io
 import json
+import sys
 import tempfile
 import unittest
+from contextlib import redirect_stderr
 from pathlib import Path
 from unittest.mock import patch
 
@@ -59,13 +62,52 @@ class InputValidationTests(unittest.TestCase):
 
     def test_invalid_json_is_reported(self) -> None:
         self.path.write_text("[", encoding="utf-8")
-        with self.assertRaises(json.JSONDecodeError):
+        with self.assertRaisesRegex(ValueError, "line 1, column 2"):
             JsonParser().load_functions(self.path)
 
     def test_runtime_errors_return_failure_exit_code(self) -> None:
-        with patch("src.__main__.Application", side_effect=OSError("denied")):
+        output = io.StringIO()
+        with patch("src.model.app.Application", side_effect=OSError("denied")):
             with patch("sys.argv", ["src"]):
-                self.assertEqual(main(), 1)
+                with redirect_stderr(output):
+                    self.assertEqual(main(), 1)
+        self.assertEqual(output.getvalue().strip(), "Error: denied")
+
+    def test_validation_error_is_concise(self) -> None:
+        function = self.function()
+        function["parameters"] = {"": {"type": "string"}}
+        self.save([function])
+        with self.assertRaises(ValueError) as error:
+            JsonParser().load_functions(self.path)
+        self.assertEqual(
+            str(error.exception),
+            "Invalid function #1: parameters: Parameter name cannot be empty",
+        )
+
+    def test_invalid_prompt_identifies_position(self) -> None:
+        path = Path(self.tempdir.name) / "prompts.json"
+        path.write_text(
+            json.dumps([{"prompt": "ok"}, {"prompt": ""}]),
+            encoding="utf-8",
+        )
+        with self.assertRaises(ValueError) as error:
+            JsonParser().load_prompts(path)
+        self.assertIn("Invalid prompt #2: prompt:", str(error.exception))
+        self.assertNotIn("errors.pydantic.dev", str(error.exception))
+
+    def test_unreadable_file_has_context(self) -> None:
+        with patch.object(Path, "open", side_effect=PermissionError("denied")):
+            with self.assertRaisesRegex(OSError, "Cannot read file"):
+                JsonParser().load_functions(self.path)
+
+    def test_missing_dependency_is_reported(self) -> None:
+        output = io.StringIO()
+        with patch.dict(sys.modules, {"llm_sdk": None}):
+            with patch("sys.argv", ["src"]):
+                with redirect_stderr(output):
+                    self.assertEqual(main(), 1)
+        self.assertIn("Missing Python module 'llm_sdk'", output.getvalue())
+        self.assertNotIn("Traceback", output.getvalue())
 
 
 if __name__ == "__main__":
