@@ -52,6 +52,8 @@ class FunctionSelector(BaseModel):
         """Return the function preferred by the model."""
         context_ids = self.model.encode(context)[0].tolist()
         candidates = self.token_function_available()
+        if not candidates:
+            raise ValueError("No functions available for selection")
         generated_ids: list[int] = []
 
         while candidates:
@@ -69,6 +71,9 @@ class FunctionSelector(BaseModel):
             logits = self.model.get_logits_from_input_ids(
                 context_ids + generated_ids
             )
+            if any(token_id < 0 or token_id >= len(logits)
+                   for token_id in allowed_ids):
+                raise ValueError("Function token ID outside model vocabulary")
             next_token_id = max(
                 allowed_ids,
                 key=lambda token_id: logits[token_id],
