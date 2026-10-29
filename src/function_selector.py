@@ -18,13 +18,13 @@ class FunctionSelector(BaseModel):
 
     @staticmethod
     def allowed_ids_for_position(
-        sequences: Iterable[list[int]],
+        func_name_ids: Iterable[list[int]],
         position: int,
     ) -> list[int]:
         """Return unique token IDs for the current position."""
         allowed_ids: list[int] = []
 
-        for tokens in sequences:
+        for tokens in func_name_ids:
             if position >= len(tokens):
                 continue
 
