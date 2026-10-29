@@ -128,6 +128,28 @@ class ArgumentGeneratorTests(unittest.TestCase):
                 self.function({"count": "number"}),
             )
 
+    def test_vocabulary_is_loaded_only_once(self) -> None:
+        model = self.make_model(
+            tokens={0: '"count":12}'},
+            scores=[[10]],
+        )
+        generator = ArgumentGenerator.model_construct(model=model)
+        first = generator.vocabulary_ids()
+        second = generator.vocabulary_ids()
+        self.assertEqual(first, second)
+        model.get_path_to_vocab_file.assert_called_once()
+
+    def test_non_finite_logits_are_skipped(self) -> None:
+        model = self.make_model(
+            tokens={0: '"count":1}', 1: '"count":2}'},
+            scores=[[float("nan"), 10]],
+        )
+        generator = ArgumentGenerator.model_construct(model=model)
+        result = generator.generate(
+            self.prompt, self.function({"count": "integer"}),
+        )
+        self.assertEqual(result, {"count": 2})
+
     def test_empty_parameters_skip_model_generation(self) -> None:
         model = MagicMock()
         generator = ArgumentGenerator.model_construct(model=model)
