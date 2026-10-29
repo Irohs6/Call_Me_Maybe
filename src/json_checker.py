@@ -557,30 +557,3 @@ class JsonChecker(BaseModel):
                 boolean_parser.read(t)
 
         return 0 if state == "done" else -1
-
-    def check_string(self, value: str) -> int:
-        """Check a string prefix using the string parser."""
-        parser = JsonStringParser()
-        for t in value:
-            result = parser.read(t)
-            if result == -2:
-                return -2
-        return 0 if parser.state == "done" else -1
-
-    def check_number(self, value: str) -> int:
-        """Check a number prefix using the number parser."""
-        parser = JsonNumberParser()
-        for t in value:
-            if parser.read(t) == -2:
-                return -2
-        return 0 if parser.can_finish() else -1
-
-    def check_boolean(self, value: str) -> int:
-        """Check a boolean prefix using the boolean parser."""
-        parser = JsonBooleanParser()
-        for t in value:
-            if parser.read(t) == -2:
-                return -2
-        if parser.expected and parser.position == len(parser.expected):
-            return 0
-        return -1
