@@ -2,6 +2,8 @@
 
 import unittest
 
+from src.model.models import Type
+
 from src.json_grammar import (
     JsonBooleanParser,
     JsonGrammar,
@@ -242,6 +244,129 @@ class JsonGrammarTests(unittest.TestCase):
         for text in invalid:
             with self.subTest(text=text):
                 self.assertEqual(self.grammar.status(text), -2)
+
+
+class JsonSchemaGrammarTests(unittest.TestCase):
+    """Check dynamic key names and types required by the function schema."""
+
+    def setUp(self) -> None:
+        self.grammar = JsonGrammar(parameters={
+            "a": Type(type="number"),
+            "b": Type(type="number"),
+        })
+
+    def test_valid_keys_in_any_order(self) -> None:
+        valid = (
+            '{"a":2,"b":3}',
+            '{"b":3,"a":2}',
+            '{"a":-1.5e3,"b":0}',
+            '{"\\u0061":2,"b":3}',
+            '{"a":2,"b":3}',
+        )
+        for text in valid:
+            with self.subTest(text=text):
+                self.assertEqual(self.grammar.status(text), 0)
+
+    def test_reject_missing_keys(self) -> None:
+        for text in ('{}', '{"a":2}', '{"b":3}'):
+            with self.subTest(text=text):
+                self.assertEqual(self.grammar.status(text), -2)
+
+    def test_reject_unknown_and_duplicate_keys(self) -> None:
+        invalid = (
+            '{"x":1,"a":2,"b":3}',
+            '{"a":2,"c":3}',
+            '{"a":2,"a":3,"b":4}',
+            '{"a":2,"b":3,"a":4}',
+            '{"a":2,"b":3,',
+        )
+        for text in invalid:
+            with self.subTest(text=text):
+                self.assertEqual(self.grammar.status(text), -2)
+
+    def test_reject_impossible_key_prefixes(self) -> None:
+        self.assertEqual(self.grammar.status('{"z'), -2)
+        self.assertEqual(self.grammar.status('{"a":2,"a'), -2)
+        self.assertEqual(self.grammar.status('{"a":2,"b":3,"'), -2)
+
+    def test_reject_incorrect_value_types(self) -> None:
+        invalid = (
+            '{"a":"2","b":3}',
+            '{"a":true,"b":3}',
+            '{"a":2,"b":false}',
+        )
+        for text in invalid:
+            with self.subTest(text=text):
+                self.assertEqual(self.grammar.status(text), -2)
+
+    def test_string_and_boolean_fields(self) -> None:
+        grammar = JsonGrammar(parameters={
+            "name": Type(type="string"),
+            "active": Type(type="boolean"),
+        })
+        self.assertEqual(
+            grammar.status('{"name":"Iroh","active":true}'), 0
+        )
+        self.assertEqual(
+            grammar.status('{"active":false,"name":""}'), 0
+        )
+        self.assertEqual(
+            grammar.status('{"name":true,"active":false}'), -2
+        )
+        self.assertEqual(
+            grammar.status('{"name":"Iroh","active":"false"}'), -2
+        )
+
+    def test_integer_has_no_decimals_or_exponents(self) -> None:
+        grammar = JsonGrammar(parameters={
+            "count": Type(type="integer"),
+        })
+        for number in ("0", "-123", "456"):
+            with self.subTest(number=number):
+                self.assertEqual(
+                    grammar.status('{"count":' + number + '}'), 0
+                )
+        for number in ("0.0", "1e3", "1E+2", "-1.5"):
+            with self.subTest(number=number):
+                self.assertEqual(
+                    grammar.status('{"count":' + number + '}'), -2
+                )
+
+    def test_empty_schema_accepts_only_empty_object(self) -> None:
+        grammar = JsonGrammar(parameters={})
+        self.assertEqual(grammar.status("{}"), 0)
+        self.assertEqual(grammar.status('{"a":2}'), -2)
+        self.assertEqual(grammar.status('{"'), -2)
+
+    def test_incomplete_schema_prefixes(self) -> None:
+        valid_prefixes = (
+            "{", '{"a', '{"a"', '{"a":', '{"a":2',
+            '{"a":2,', '{"a":2,"b', '{"a":2,"b":',
+            '{"a":2,"b":-', '{"a":2,"b":3',
+        )
+        for text in valid_prefixes:
+            with self.subTest(text=text):
+                self.assertEqual(self.grammar.status(text), -1)
+
+    def test_recheck_every_prefix(self) -> None:
+        grammar = JsonGrammar(parameters={
+            "name": Type(type="string"),
+            "active": Type(type="boolean"),
+        })
+        text = '{"active":true,"name":"Jörg"}'
+        for i in range(len(text) + 1):
+            with self.subTest(prefix=text[:i]):
+                self.assertNotEqual(grammar.status(text[:i]), -2)
+        self.assertEqual(grammar.status(text), 0)
+
+    def test_escaped_key_name(self) -> None:
+        grammar = JsonGrammar(parameters={
+            "name": Type(type="string"),
+        })
+        self.assertEqual(
+            grammar.status(r'{"\u006eame":"hello"}'), 0
+        )
+
 
 
 if __name__ == '__main__':
