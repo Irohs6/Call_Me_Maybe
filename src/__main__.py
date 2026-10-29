@@ -93,7 +93,7 @@ def main() -> int:
                 f"Cannot write output '{args.output}': {error}"
             ) from error
 
-        print(f"{colored('Result:', '32', sys.stdout)} {output}")
+        print(f"{colored('Dict answer final:', '32', sys.stdout)} {output}")
         return 0
     except ModuleNotFoundError as error:
         print_error(
