@@ -84,7 +84,9 @@ class InputValidationTests(unittest.TestCase):
             encoding="utf-8",
         )
         prompts = JsonParser().load_prompts(path)
-        self.assertEqual([item.prompt for item in prompts], ["first", "second"])
+        self.assertEqual(
+            [item.prompt for item in prompts], ["first", "second"]
+        )
 
     def test_empty_function_list_is_rejected(self) -> None:
         self.save([])
