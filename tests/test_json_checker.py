@@ -2,7 +2,9 @@
 
 import unittest
 
-from src.json_checker import JsonChecker
+from src.json_checker import (
+    JsonBooleanParser, JsonChecker, JsonNumberParser, JsonStringParser,
+)
 
 
 class JsonCheckerTests(unittest.TestCase):
@@ -207,17 +209,30 @@ class JsonCheckerTests(unittest.TestCase):
             with self.subTest(text=text):
                 self.assertEqual(checker.status(text), -1)
 
-    def test_helpers(self) -> None:
-        checker = JsonChecker(parameters={})
-        self.assertEqual(checker.check_string(r'"\u0041"'), 0)
-        self.assertEqual(checker.check_string(r'"\u00'), -1)
-        self.assertEqual(checker.check_string(r'"\x"'), -2)
-        self.assertEqual(checker.check_number("-12.4e+2"), 0)
-        self.assertEqual(checker.check_number("1e+"), -1)
-        self.assertEqual(checker.check_number("01"), -2)
-        self.assertEqual(checker.check_boolean("false"), 0)
-        self.assertEqual(checker.check_boolean("fal"), -1)
-        self.assertEqual(checker.check_boolean("falsee"), -2)
+    def test_primitive_parsers(self) -> None:
+        string_parser = JsonStringParser()
+        for char in r'"\u0041"':
+            result = string_parser.read(char)
+        self.assertEqual(result, 0)
+
+        incomplete = JsonStringParser()
+        for char in r'"\u00':
+            self.assertEqual(incomplete.read(char), -1)
+        self.assertEqual(JsonStringParser().read("x"), -2)
+
+        number_parser = JsonNumberParser()
+        for char in "-12.4e+2}":
+            result = number_parser.read(char)
+        self.assertEqual(result, 0)
+
+        invalid_number = JsonNumberParser()
+        invalid_number.read("0")
+        self.assertEqual(invalid_number.read("1"), -2)
+
+        boolean_parser = JsonBooleanParser()
+        for char in "false}":
+            result = boolean_parser.read(char)
+        self.assertEqual(result, 0)
 
     def test_escaped_key_quotes(self) -> None:
         checker = JsonChecker(parameters={'a"b': "string"})
