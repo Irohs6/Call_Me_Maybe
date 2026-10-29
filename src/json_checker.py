@@ -315,7 +315,7 @@ class JsonBooleanParser(BaseModel):
 
 
 class JsonChecker(BaseModel):
-    """Validate a JSON object prefix using required parameter names and types."""
+    """Validate a JSON object prefix using required names and types."""
 
     parameters: dict[str, str]
 
