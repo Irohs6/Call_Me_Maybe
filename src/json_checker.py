@@ -1,9 +1,8 @@
-"""Read JSON object, string and number syntax one character at a time."""
+"""Check JSON object prefixes with small state-based parsers."""
 
 import json
 
 from pydantic import BaseModel
-
 
 
 class JsonStringParser(BaseModel):
@@ -316,7 +315,7 @@ class JsonBooleanParser(BaseModel):
 
 
 class JsonChecker(BaseModel):
-    """Validate a JSON object prefix against optional required parameters."""
+    """Validate a JSON object prefix using required parameter names and types."""
 
     parameters: dict[str, str]
 
