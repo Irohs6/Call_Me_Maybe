@@ -87,7 +87,7 @@ def main() -> int:
         try:
             args.output.parent.mkdir(parents=True, exist_ok=True)
             with args.output.open("w", encoding="utf-8") as file:
-                json.dump(output, file, indent=4)
+                json.dump(output, file, indent=4, allow_nan=False)
         except OSError as error:
             raise OSError(
                 f"Cannot write output '{args.output}': {error}"
