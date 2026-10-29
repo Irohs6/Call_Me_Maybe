@@ -1,6 +1,6 @@
 from argparse import ArgumentParser
 from pathlib import Path
-from json.decoder import JSONDecodeError
+import sys
 
 from .argument_generator import ArgumentGenerator
 from .model.app import Application
@@ -16,7 +16,7 @@ YELLOW = "\033[93m"
 RESET = "\033[0m"
 
 
-def main() -> None:
+def main() -> int:
     parser = ArgumentParser()
 
     parser.add_argument(
@@ -45,13 +45,12 @@ def main() -> None:
 
     args = parser.parse_args()
 
-    app = Application(
-        functions_path=args.functions_definition,
-        input_path=args.input,
-        output_path=args.output,
-    )
-
     try:
+        app = Application(
+            functions_path=args.functions_definition,
+            input_path=args.input,
+            output_path=args.output,
+        )
         app.run()
 
         context_builder = ContextBuilder(
@@ -85,13 +84,14 @@ def main() -> None:
             results.append(function_call)
         output = [result.model_dump(mode="json") for result in results]
         args.output.parent.mkdir(parents=True, exist_ok=True)
-        with args.output.open("w") as file:
+        with args.output.open("w", encoding="utf-8") as file:
             json.dump(output, file, indent=4)
         print(f"{CYAN}Dict answer final:{RESET} {output}")
-    except (ValueError, FileNotFoundError, JSONDecodeError) as error:
-        print(f"Error: {error}")
-        return
+        return 0
+    except Exception as error:
+        print(f"Error: {error}", file=sys.stderr)
+        return 1
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())
