@@ -31,7 +31,9 @@ class JsonParser(BaseModel):
     def _load(path: Path) -> object:
         try:
             with path.open("r", encoding="utf-8") as file:
-                return json.load(file, object_pairs_hook=JsonParser._unique_keys)
+                return json.load(
+                    file, object_pairs_hook=JsonParser._unique_keys
+                )
         except FileNotFoundError as error:
             raise FileNotFoundError(f"File not found: {path}") from error
         except json.JSONDecodeError as error:
