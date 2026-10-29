@@ -1,9 +1,11 @@
 """Generate typed arguments for the selected function."""
 
+import heapq
 import json
+import math
 
 from llm_sdk import Small_LLM_Model
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, PrivateAttr
 
 from .json_checker import JsonChecker
 from .model.context_builder import ContextBuilder
@@ -16,6 +18,28 @@ class ArgumentGenerator(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
     model: Small_LLM_Model
+    _vocabulary_ids: tuple[int, ...] | None = PrivateAttr(default=None)
+
+    def vocabulary_ids(self) -> tuple[int, ...]:
+        """Load and reuse the model vocabulary across prompts."""
+        if self._vocabulary_ids is None:
+            with open(
+                self.model.get_path_to_vocab_file(),
+                encoding="utf-8",
+            ) as file:
+                vocabulary = json.load(file)
+
+            if not isinstance(vocabulary, dict):
+                raise ValueError("The vocabulary must be a JSON object")
+
+            ids = {
+                token_id for token_id in vocabulary.values()
+                if type(token_id) is int and token_id >= 0
+            }
+            if not ids:
+                raise ValueError("The vocabulary contains no token IDs")
+            self._vocabulary_ids = tuple(sorted(ids))
+        return self._vocabulary_ids
 
     @staticmethod
     def create_argument_context(
@@ -91,33 +115,23 @@ class ArgumentGenerator(BaseModel):
             for name, definition in function.parameters.items()
         })
 
-        with open(
-            self.model.get_path_to_vocab_file(),
-            encoding="utf-8",
-        ) as file:
-            vocabulary = json.load(file)
-
-        if not isinstance(vocabulary, dict):
-            raise ValueError("The vocabulary must be a JSON object")
-
-        vocabulary_ids = [
-            token_id for token_id in vocabulary.values()
-            if type(token_id) is int and token_id >= 0
-        ]
+        vocabulary_ids = self.vocabulary_ids()
 
         for _ in range(256):
             logits = self.model.get_logits_from_input_ids(
                 context_ids + generated_ids
             )
             previous_text = self.model.decode(generated_ids)
-            allowed_ids = sorted(
-                (token_id for token_id in vocabulary_ids
-                 if token_id < len(logits)),
-                key=lambda token_id: logits[token_id],
-                reverse=True,
-            )
+            candidates = [
+                (-logits[token_id], token_id)
+                for token_id in vocabulary_ids
+                if token_id < len(logits)
+                and math.isfinite(logits[token_id])
+            ]
+            heapq.heapify(candidates)
 
-            for token_id in allowed_ids:
+            while candidates:
+                _, token_id = heapq.heappop(candidates)
                 next_ids = generated_ids + [token_id]
                 text = self.model.decode(next_ids)
                 if text == previous_text or "\ufffd" in text:
