@@ -6,7 +6,7 @@
 
 Call Me Maybe is a Python function-calling project based on the Qwen3-0.6B language model and the provided `llm_sdk`. It reads natural-language requests and function definitions, chooses a suitable function, and extracts its typed arguments. The application writes one JSON output file with the original prompt, function name and parameters.
 
-**Project status:** Work in progress. Function-name selection uses constrained token choices; argument generation currently uses greedy token selection followed by JSON parsing and type validation. Full token-level JSON/schema constraints for arguments are **not yet connected**. The `test-json-structure-methods` branch includes experimental `JsonGrammar`, `JsonStringParser`, `JsonNumberParser` and `JsonBooleanParser` classes. It supports string keys and string, number and boolean values (`true`/`false`), but not schema-aware key/type restrictions yet.
+**Project status:** Work in progress. Function-name selection uses constrained token choices; argument generation currently uses greedy token selection followed by JSON parsing and type validation. Full token-level JSON/schema constraints for arguments are **not yet connected**. The `test-json-structure-methods` branch includes experimental `JsonGrammar`, `JsonStringParser`, `JsonNumberParser` and `JsonBooleanParser` classes. It supports string keys and string, number and boolean values (`true`/`false`). When constructed with `JsonGrammar(parameters=function.parameters)`, it also restricts keys and primitive types to the function schema. It is not yet connected to token selection in `ArgumentGenerator`.
 
 ## Instructions
 
@@ -54,7 +54,7 @@ Other Makefile targets: `make debug`, `make clean`, `make lint` and optional `ma
 - `ContextBuilder` assembles the language-model prompts.
 - `FunctionSelector` selects only among the provided function names.
 - `ArgumentGenerator` handles the parameters in one generation pass.
-- `JsonGrammar` manages object structure; `JsonStringParser` handles escaped strings, `JsonNumberParser` handles numeric states including signs, decimals and exponents, and `JsonBooleanParser` validates `true` and `false` character by character.
+- `JsonGrammar` manages object structure and required schema keys/types; `JsonStringParser` handles escaped strings, `JsonNumberParser` handles numeric states (including strict integers), and `JsonBooleanParser` validates `true` and `false` character by character.
 - Pydantic models validate input and output structures. The `Small_LLM_Model` wrapper is used through its public methods.
 
 ## Example usage
