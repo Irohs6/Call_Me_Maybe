@@ -38,7 +38,8 @@ class Encoded:
 
 
 class FakeModel:
-    def __init__(self, tokens, scores, vocab_file=None):
+    def __init__(self, tokens, scores, vocab_file=None, fused_newline=False):
+        self.fused_newline = fused_newline
         self.tokens = tokens
         self.scores = scores
         self.vocab_file = vocab_file
@@ -48,7 +49,7 @@ class FakeModel:
         if text == "{":
             return Encoded([50])
         if text.endswith("\n") and text[:-1] == "fn_test":
-            return Encoded([5, 6])
+            return Encoded([5] if self.fused_newline else [5, 6])
         return Encoded([99])
 
     def decode(self, ids):
@@ -184,6 +185,17 @@ class DecodingProbes(unittest.TestCase):
             model, "context", [self.function()]
         )
         self.assertEqual(selected, "fn_test")
+
+    @unittest.expectedFailure
+    def test_selector_name_and_newline_in_one_token(self):
+        """A tokenizer may fuse the function suffix and newline in one ID."""
+        scores = [float("-inf")] * 16
+        scores[5] = 10
+        model = FakeModel({5: "fn_test\n"}, [scores], fused_newline=True)
+        self.assertEqual(
+            FunctionSelector().get_func_name(model, "context", [self.function()]),
+            "fn_test",
+        )
 
     @unittest.expectedFailure
     def test_selector_rejects_nan_before_decoding(self):
