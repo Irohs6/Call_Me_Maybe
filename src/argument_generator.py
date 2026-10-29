@@ -5,6 +5,7 @@ import json
 from llm_sdk import Small_LLM_Model
 from pydantic import BaseModel, ConfigDict
 
+from .json_checker import JsonChecker
 from .model.context_builder import ContextBuilder
 from .model.models import Function, Prompt
 
@@ -85,25 +86,56 @@ class ArgumentGenerator(BaseModel):
         context = self.create_argument_context(prompt, function)
         context_ids = self.model.encode(context)[0].tolist()
         generated_ids: list[int] = []
-        decoder = json.JSONDecoder()
+        checker = JsonChecker(parameters={
+            name: definition.type
+            for name, definition in function.parameters.items()
+        })
+
+        with open(
+            self.model.get_path_to_vocab_file(),
+            encoding="utf-8",
+        ) as file:
+            vocabulary = json.load(file)
+
+        if not isinstance(vocabulary, dict):
+            raise ValueError("The vocabulary must be a JSON object")
+
+        vocabulary_ids = [
+            token_id for token_id in vocabulary.values()
+            if type(token_id) is int and token_id >= 0
+        ]
+
         for _ in range(256):
             logits = self.model.get_logits_from_input_ids(
                 context_ids + generated_ids
             )
-            next_token_id = max(
-                range(len(logits)),
+            previous_text = self.model.decode(generated_ids)
+            allowed_ids = sorted(
+                (token_id for token_id in vocabulary_ids
+                 if token_id < len(logits)),
                 key=lambda token_id: logits[token_id],
+                reverse=True,
             )
-            generated_ids.append(next_token_id)
 
-            candidate = "{" + self.model.decode(generated_ids)
+            for token_id in allowed_ids:
+                next_ids = generated_ids + [token_id]
+                text = self.model.decode(next_ids)
+                if text == previous_text or "\ufffd" in text:
+                    continue
 
-            try:
-                arguments, _ = decoder.raw_decode(candidate)
-            except json.JSONDecodeError:
-                continue
+                candidate = "{" + text
+                status = checker.status(candidate)
+                if status == -2:
+                    continue
 
-            return self.validate_arguments(arguments, function)
+                generated_ids.append(token_id)
+                if status == 0:
+                    return self.validate_arguments(
+                        json.loads(candidate), function,
+                    )
+                break
+            else:
+                raise ValueError("No valid token can continue the JSON")
 
         raise ValueError(
             "Argument generation exceeded the 256-token limit"
