@@ -122,13 +122,25 @@ class JsonCheckerTests(unittest.TestCase):
             with self.subTest(text=text):
                 self.assertEqual(checker.status(text), -2)
 
-    def test_keys_are_validated_when_closed(self) -> None:
+    def test_key_prefixes_are_checked_immediately(self) -> None:
         checker = JsonChecker(parameters={"a": "number", "b": "number"})
-        self.assertEqual(checker.status('{"z'), -1)
-        self.assertEqual(checker.status('{"a":2,"a'), -1)
-        self.assertEqual(checker.status('{"z"'), -2)
-        self.assertEqual(checker.status('{"a":2,"a"'), -2)
+        self.assertEqual(checker.status('{"z'), -2)
+        self.assertEqual(checker.status('{"a":2,"a'), -2)
         self.assertEqual(checker.status('{"a":2,"b":3,"'), -2)
+        self.assertEqual(checker.status('{"a'), -1)
+        self.assertEqual(checker.status('{"a":2,"b'), -1)
+
+    def test_key_prefix_does_not_reject_valid_escapes(self) -> None:
+        checker = JsonChecker(parameters={"name": "string"})
+        self.assertEqual(checker.status('{"na'), -1)
+        self.assertEqual(checker.status('{"namz'), -2)
+        self.assertEqual(checker.status('{"xyz'), -2)
+        self.assertEqual(checker.status(r'{"\\u006e'), -1)
+        self.assertEqual(checker.status(r'{"\\u006eame":"ok"}'), 0)
+
+        quoted = JsonChecker(parameters={'a"b': "string"})
+        self.assertEqual(quoted.status(r'{"a\\\"'), -1)
+        self.assertEqual(quoted.status(r'{"a\\\"b":"ok"}'), 0)
 
     def test_small_structure_helpers(self) -> None:
         checker = JsonChecker(parameters={})
