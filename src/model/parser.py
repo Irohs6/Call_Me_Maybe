@@ -10,6 +10,16 @@ from .models import Function, Prompt
 
 class JsonParser(BaseModel):
     @staticmethod
+    def _unique_keys(pairs: list[tuple[str, object]]) -> dict[str, object]:
+        """Reject repeated keys before JSON objects become dictionaries."""
+        values: dict[str, object] = {}
+        for key, value in pairs:
+            if key in values:
+                raise ValueError(f"Duplicate JSON key: '{key}'")
+            values[key] = value
+        return values
+
+    @staticmethod
     def _validation_message(error: ValidationError) -> str:
         """Keep the first useful Pydantic error without its debug metadata."""
         issue = error.errors()[0]
@@ -21,7 +31,7 @@ class JsonParser(BaseModel):
     def _load(path: Path) -> object:
         try:
             with path.open("r", encoding="utf-8") as file:
-                return json.load(file)
+                return json.load(file, object_pairs_hook=JsonParser._unique_keys)
         except FileNotFoundError as error:
             raise FileNotFoundError(f"File not found: {path}") from error
         except json.JSONDecodeError as error:
