@@ -81,7 +81,16 @@ class ArgumentGenerator(BaseModel):
                     value, bool
                 )
                 if valid:
-                    value = float(value)
+                    try:
+                        value = float(value)
+                    except OverflowError as error:
+                        raise ValueError(
+                            f"Number for '{name}' is out of range"
+                        ) from error
+                    if not math.isfinite(value):
+                        raise ValueError(
+                            f"Number for '{name}' must be finite"
+                        )
             elif type_value == "integer":
                 valid = isinstance(value, int) and not isinstance(value, bool)
             elif type_value == "boolean":
@@ -142,11 +151,16 @@ class ArgumentGenerator(BaseModel):
                 if status == -2:
                     continue
 
-                generated_ids.append(token_id)
                 if status == 0:
-                    return self.validate_arguments(
-                        json.loads(candidate), function,
-                    )
+                    try:
+                        arguments = self.validate_arguments(
+                            json.loads(candidate), function,
+                        )
+                    except ValueError:
+                        continue
+                    generated_ids.append(token_id)
+                    return arguments
+                generated_ids.append(token_id)
                 break
             else:
                 raise ValueError("No valid token can continue the JSON")
