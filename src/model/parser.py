@@ -33,25 +33,32 @@ class JsonParser(BaseModel):
             ) from error
 
     def load_functions(
-            self,
-            path: Path) -> list[Function]:
+        self, path: Path,
+    ) -> list[Function]:
+        """Load and validate all functions, including name uniqueness."""
         data = self._load(path)
-
         if not isinstance(data, list):
-            raise ValueError(
-                "Functions definition must be a JSON array."
-            )
+            raise ValueError("Functions definition must be a JSON array")
 
         try:
-            return [
-                Function.model_validate(item)
-                for item in data
+            functions = [
+                Function.model_validate(item) for item in data
             ]
-
         except ValidationError as error:
             raise ValueError(
-                "Invalid function definition."
+                f"Invalid function definition: {error}"
             ) from error
+
+        if not functions:
+            raise ValueError("No functions defined")
+        names: set[str] = set()
+        for function in functions:
+            if function.name in names:
+                raise ValueError(
+                    f"Duplicate function name: {function.name}"
+                )
+            names.add(function.name)
+        return functions
 
     def load_prompts(
         self,
@@ -72,5 +79,5 @@ class JsonParser(BaseModel):
 
         except ValidationError as error:
             raise ValueError(
-                "Invalid prompt definition."
+                f"Invalid prompt definition: {error}"
             ) from error
