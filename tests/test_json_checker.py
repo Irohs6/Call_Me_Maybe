@@ -135,12 +135,12 @@ class JsonCheckerTests(unittest.TestCase):
         self.assertEqual(checker.status('{"na'), -1)
         self.assertEqual(checker.status('{"namz'), -2)
         self.assertEqual(checker.status('{"xyz'), -2)
-        self.assertEqual(checker.status(r'{"\\u006e'), -1)
-        self.assertEqual(checker.status(r'{"\\u006eame":"ok"}'), 0)
+        self.assertEqual(checker.status(r'{"\u006e'), -1)
+        self.assertEqual(checker.status(r'{"\u006eame":"ok"}'), 0)
 
         quoted = JsonChecker(parameters={'a"b': "string"})
-        self.assertEqual(quoted.status(r'{"a\\\"'), -1)
-        self.assertEqual(quoted.status(r'{"a\\\"b":"ok"}'), 0)
+        self.assertEqual(quoted.status(r'{"a\"'), -1)
+        self.assertEqual(quoted.status(r'{"a\"b":"ok"}'), 0)
 
     def test_small_structure_helpers(self) -> None:
         checker = JsonChecker(parameters={})
