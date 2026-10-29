@@ -150,6 +150,36 @@ class ArgumentGeneratorTests(unittest.TestCase):
         )
         self.assertEqual(result, {"count": 2})
 
+    def test_non_finite_generated_number_tries_next_token(self) -> None:
+        model = self.make_model(
+            tokens={
+                0: '"value":1e400}',
+                1: '"value":12}',
+            },
+            scores=[[20, 10]],
+        )
+        generator = ArgumentGenerator.model_construct(model=model)
+        result = generator.generate(
+            self.prompt, self.function({"value": "number"}),
+        )
+        self.assertEqual(result, {"value": 12.0})
+
+    def test_non_finite_numbers_are_rejected(self) -> None:
+        function = self.function({"value": "number"})
+        for value in (float("inf"), float("-inf"), float("nan")):
+            with self.subTest(value=value):
+                with self.assertRaisesRegex(ValueError, "must be finite"):
+                    ArgumentGenerator.validate_arguments(
+                        {"value": value}, function,
+                    )
+
+    def test_huge_integer_cannot_overflow_a_number(self) -> None:
+        function = self.function({"value": "number"})
+        with self.assertRaisesRegex(ValueError, "out of range"):
+            ArgumentGenerator.validate_arguments(
+                {"value": 10 ** 500}, function,
+            )
+
     def test_empty_parameters_skip_model_generation(self) -> None:
         model = MagicMock()
         generator = ArgumentGenerator.model_construct(model=model)
