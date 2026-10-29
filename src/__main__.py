@@ -83,7 +83,7 @@ def main() -> int:
             except Exception as error:
                 raise RuntimeError(f"Prompt #{i}: {error}") from error
 
-        output = [result.model_dump(mode="json") for result in results]
+        output = [result.model_dump(mode="python") for result in results]
         try:
             args.output.parent.mkdir(parents=True, exist_ok=True)
             with args.output.open("w", encoding="utf-8") as file:
