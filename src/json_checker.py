@@ -346,6 +346,17 @@ class JsonChecker(BaseModel):
         """Reject unknown or repeated parameter names."""
         return key in self.parameters and key not in used_keys
 
+    def is_key_prefix(self, key: str, used_keys: set[str]) -> bool:
+        """Check whether a remaining parameter can begin with this key."""
+        prefix = key.split("\\", 1)[0]
+
+        for name in self.parameters:
+            if name in used_keys:
+                continue
+            if name.startswith(prefix):
+                return True
+        return False
+
     def is_structure_allowed(
         self,
         state: str,
@@ -487,6 +498,8 @@ class JsonChecker(BaseModel):
                 if state == "key":
                     if result == -1:
                         key_buffer += t
+                        if not self.is_key_prefix(key_buffer, used_keys):
+                            return -2
                     else:
                         try:
                             key = json.loads('"' + key_buffer + '"')
