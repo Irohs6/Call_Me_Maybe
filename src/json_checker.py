@@ -1,278 +1,574 @@
-"""Check JSON object prefixes against the selected function parameters."""
+"""Read JSON object, string and number syntax one character at a time."""
 
 import json
 
 from pydantic import BaseModel
 
 
+
+class JsonStringParser(BaseModel):
+    """Parse one JSON string, keeping escape and Unicode state."""
+
+    state: str = "start"
+    unicode_count: int = 0
+
+    @staticmethod
+    def is_quote(char: str) -> bool:
+        """Recognize JSON double quotes."""
+        return char == '"'
+
+    @staticmethod
+    def is_escape(char: str) -> bool:
+        """Recognize a backslash."""
+        return char == "\\"
+
+    @staticmethod
+    def is_valid_escape(char: str) -> bool:
+        """Recognize valid escapes after a backslash."""
+        return char in ('"', "\\", "/", "b", "f", "n", "r", "t")
+
+    @staticmethod
+    def is_unicode_escape(char: str) -> bool:
+        """Recognize a Unicode escape marker."""
+        return char == "u"
+
+    @staticmethod
+    def is_hex_digit(char: str) -> bool:
+        """Recognize a hexadecimal digit."""
+        return char in "0123456789abcdefABCDEF"
+
+    @staticmethod
+    def is_control_character(char: str) -> bool:
+        """Recognize forbidden unescaped control characters."""
+        return ord(char) < 32
+
+    def read_start(self, char: str) -> int:
+        """Begin a string with an opening quote."""
+        if not self.is_quote(char):
+            return -2
+        self.state = "string"
+        return -1
+
+    def read_string(self, char: str) -> int:
+        """Read normal string content until its closing quote."""
+        if self.is_quote(char):
+            self.state = "done"
+            return 0
+        if self.is_escape(char):
+            self.state = "escape"
+        elif self.is_control_character(char):
+            return -2
+        return -1
+
+    def read_escape(self, char: str) -> int:
+        """Validate one escaped character or begin Unicode."""
+        if self.is_valid_escape(char):
+            self.state = "string"
+        elif self.is_unicode_escape(char):
+            self.state = "unicode"
+            self.unicode_count = 0
+        else:
+            return -2
+        return -1
+
+    def read_unicode(self, char: str) -> int:
+        """Require four hexadecimal digits after the Unicode marker."""
+        if not self.is_hex_digit(char):
+            return -2
+        self.unicode_count += 1
+        if self.unicode_count == 4:
+            self.state = "string"
+        return -1
+
+    def read(self, char: str) -> int:
+        """Return 0 complete, -1 incomplete, or -2 invalid."""
+        if self.state == "start":
+            return self.read_start(char)
+        if self.state == "string":
+            return self.read_string(char)
+        if self.state == "escape":
+            return self.read_escape(char)
+        if self.state == "unicode":
+            return self.read_unicode(char)
+        return -2
+
+
+class JsonNumberParser(BaseModel):
+    """Parse one JSON number, keeping its numeric state."""
+
+    state: str = "start"
+    integer_only: bool = False
+
+    @staticmethod
+    def is_negative_sign(char: str) -> bool:
+        """Check for the minus sign."""
+        return char == "-"
+
+    @staticmethod
+    def is_digit(char: str) -> bool:
+        """Recognize digits from zero to nine."""
+        return char in "0123456789"
+
+    @staticmethod
+    def is_non_zero_digit(char: str) -> bool:
+        """Recognize digits from one to nine."""
+        return char in "123456789"
+
+    @staticmethod
+    def is_decimal_point(char: str) -> bool:
+        """Check for the decimal point."""
+        return char == "."
+
+    @staticmethod
+    def is_exponent(char: str) -> bool:
+        """Check for the exponent marker."""
+        return char in ("e", "E")
+
+    @staticmethod
+    def is_exponent_sign(char: str) -> bool:
+        """Check for an optional exponent sign."""
+        return char in ("+", "-")
+
+    @staticmethod
+    def is_terminator(char: str) -> bool:
+        """Recognize separators following a completed number."""
+        return char in (" ", "\t", "\r", "\n", ",", "}")
+
+    @staticmethod
+    def is_number_start(char: str) -> bool:
+        """Recognize the possible first characters of a number."""
+        return char == "-" or char in "0123456789"
+
+    def read_start(self, char: str) -> int:
+        """Start an integer, possibly with a minus sign."""
+        if self.is_negative_sign(char):
+            self.state = "sign"
+        elif char == "0":
+            self.state = "zero"
+        elif self.is_non_zero_digit(char):
+            self.state = "integer"
+        else:
+            return -2
+        return -1
+
+    def read_sign(self, char: str) -> int:
+        """Require a digit after the minus sign."""
+        if char == "0":
+            self.state = "zero"
+        elif self.is_non_zero_digit(char):
+            self.state = "integer"
+        else:
+            return -2
+        return -1
+
+    def read_zero(self, char: str) -> int:
+        """Prevent leading zeros and accept allowed numeric suffixes."""
+        if self.integer_only:
+            return -2
+        if self.is_decimal_point(char):
+            self.state = "fraction_start"
+        elif self.is_exponent(char):
+            self.state = "exponent_start"
+        else:
+            return -2
+        return -1
+
+    def read_integer(self, char: str) -> int:
+        """Read digits and allow fractions only for number fields."""
+        if self.is_digit(char):
+            return -1
+        if self.integer_only:
+            return -2
+        if self.is_decimal_point(char):
+            self.state = "fraction_start"
+        elif self.is_exponent(char):
+            self.state = "exponent_start"
+        else:
+            return -2
+        return -1
+
+    def read_fraction_start(self, char: str) -> int:
+        """Require a digit immediately after a decimal point."""
+        if not self.is_digit(char):
+            return -2
+        self.state = "fraction"
+        return -1
+
+    def read_fraction(self, char: str) -> int:
+        """Read fraction digits and an optional exponent."""
+        if self.is_digit(char):
+            return -1
+        if not self.is_exponent(char):
+            return -2
+        self.state = "exponent_start"
+        return -1
+
+    def read_exponent_start(self, char: str) -> int:
+        """Accept an exponent sign or its first digit."""
+        if self.is_exponent_sign(char):
+            self.state = "exponent_sign"
+        elif self.is_digit(char):
+            self.state = "exponent_digits"
+        else:
+            return -2
+        return -1
+
+    def read_exponent_sign(self, char: str) -> int:
+        """Require a digit after the optional exponent sign."""
+        if not self.is_digit(char):
+            return -2
+        self.state = "exponent_digits"
+        return -1
+
+    def read_exponent_digits(self, char: str) -> int:
+        """Continue reading exponent digits."""
+        return -1 if self.is_digit(char) else -2
+
+    def can_finish(self) -> bool:
+        """A number must have a complete integer, fraction or exponent."""
+        return self.state in (
+            "zero", "integer", "fraction", "exponent_digits",
+        )
+
+    def read(self, char: str) -> int:
+        """Return 0 on a separator, -1 incomplete, -2 invalid."""
+        if self.is_terminator(char):
+            if not self.can_finish():
+                return -2
+            self.state = "done"
+            return 0
+        if self.state == "start":
+            return self.read_start(char)
+        if self.state == "sign":
+            return self.read_sign(char)
+        if self.state == "zero":
+            return self.read_zero(char)
+        if self.state == "integer":
+            return self.read_integer(char)
+        if self.state == "fraction_start":
+            return self.read_fraction_start(char)
+        if self.state == "fraction":
+            return self.read_fraction(char)
+        if self.state == "exponent_start":
+            return self.read_exponent_start(char)
+        if self.state == "exponent_sign":
+            return self.read_exponent_sign(char)
+        if self.state == "exponent_digits":
+            return self.read_exponent_digits(char)
+        return -2
+
+
+class JsonBooleanParser(BaseModel):
+    """Parse one JSON boolean, keeping its position in true or false."""
+
+    state: str = "start"
+    expected: str = ""
+    position: int = 0
+
+    @staticmethod
+    def is_boolean_start(char: str) -> bool:
+        """Recognize the first character of true or false."""
+        return char in ("t", "f")
+
+    @staticmethod
+    def is_terminator(char: str) -> bool:
+        """Recognize separators following a complete boolean."""
+        return char in (" ", "\t", "\r", "\n", ",", "}")
+
+    def read_start(self, char: str) -> int:
+        """Choose the boolean literal from its first character."""
+        if not self.is_boolean_start(char):
+            return -2
+        self.expected = "true" if char == "t" else "false"
+        self.position = 1
+        self.state = "literal"
+        return -1
+
+    def read_literal(self, char: str) -> int:
+        """Require the next character of the expected literal."""
+        if self.position >= len(self.expected):
+            return -2
+        if char != self.expected[self.position]:
+            return -2
+        self.position += 1
+        return -1
+
+    def read_end(self) -> int:
+        """A boolean is complete only after every expected letter."""
+        if self.state != "literal":
+            return -2
+        if self.position != len(self.expected):
+            return -2
+        self.state = "done"
+        return 0
+
+    def read(self, char: str) -> int:
+        """Return 0 on a separator, -1 incomplete, -2 invalid."""
+        if self.state == "done":
+            return -2
+        if self.is_terminator(char):
+            return self.read_end()
+        if self.state == "start":
+            return self.read_start(char)
+        if self.state == "literal":
+            return self.read_literal(char)
+        return -2
+
+
 class JsonChecker(BaseModel):
-    """Validate JSON syntax, required keys and parameter types."""
+    """Validate a JSON object prefix against optional required parameters."""
 
     parameters: dict[str, str]
 
-    def check_key_prefix(
-        self, value: str, used_keys: set[str],
-    ) -> bool:
-        """Keep only prefixes that can become a remaining key."""
-        try:
-            prefix = json.loads(value + '"')
-        except json.JSONDecodeError:
-            return True
-        if any(0xD800 <= ord(t) <= 0xDFFF for t in prefix):
-            return True
-        return any(
-            name.startswith(prefix)
-            for name in self.parameters
-            if name not in used_keys
+    @staticmethod
+    def is_whitespace(char: str) -> bool:
+        """Recognize JSON whitespace."""
+        return char in (" ", "\t", "\r", "\n")
+
+    def can_skip_whitespace(self, state: str, char: str) -> bool:
+        """Skip whitespace only outside strings and numeric tokens."""
+        return (
+            state in (
+                "start", "key_or_end", "key_required", "colon",
+                "value", "after_value", "done",
+            )
+            and self.is_whitespace(char)
         )
 
-    def check_value(self, value: str, type_name: str) -> int:
-        """Check a value using the type defined by the function."""
-        if type_name == "string":
-            return self.check_string(value)
-        if type_name in ("number", "integer"):
-            if type_name == "integer" and any(
-                t in value for t in ".eE"
-            ):
-                return -2
-            return self.check_number(value)
-        if type_name == "boolean":
-            return self.check_boolean(value)
-        return -2
+    def has_remaining_keys(self, used_keys: set[str]) -> bool:
+        """Check whether another required key can be written."""
+        return len(used_keys) < len(self.parameters)
+
+    def can_close_object(self, used_keys: set[str]) -> bool:
+        """Close only once every required key was written."""
+        return used_keys == set(self.parameters)
+
+    def is_expected_key(self, key: str, used_keys: set[str]) -> bool:
+        """Reject unknown or repeated parameter names."""
+        return key in self.parameters and key not in used_keys
+
+    def is_structure_allowed(
+        self,
+        state: str,
+        char: str,
+        used_keys: set[str],
+    ) -> bool:
+        """Check whether commas, keys and closing braces are allowed."""
+        if state in ("key_or_end", "after_value"):
+            if self.is_close_brace(char):
+                return self.can_close_object(used_keys)
+        if state == "after_value" and self.is_comma(char):
+            return self.has_remaining_keys(used_keys)
+        if state in ("key_or_end", "key_required"):
+            if JsonStringParser.is_quote(char):
+                return self.has_remaining_keys(used_keys)
+        return True
+
+    @staticmethod
+    def is_open_brace(char: str) -> bool:
+        """Recognize an opening brace."""
+        return char == "{"
+
+    @staticmethod
+    def is_close_brace(char: str) -> bool:
+        """Recognize a closing brace."""
+        return char == "}"
+
+    @staticmethod
+    def is_comma(char: str) -> bool:
+        """Recognize an object separator."""
+        return char == ","
+
+    @staticmethod
+    def is_colon(char: str) -> bool:
+        """Recognize the separator before a value."""
+        return char == ":"
+
+    @staticmethod
+    def read_start(char: str) -> str:
+        """Require an opening brace."""
+        return (
+            "key_or_end" if JsonChecker.is_open_brace(char)
+            else "invalid"
+        )
+
+    @staticmethod
+    def read_key_or_end(char: str) -> str:
+        """Read the first key or an empty object."""
+        if JsonChecker.is_close_brace(char):
+            return "done"
+        if JsonStringParser.is_quote(char):
+            return "key"
+        return "invalid"
+
+    @staticmethod
+    def read_key_required(char: str) -> str:
+        """Require a key after a comma."""
+        if JsonStringParser.is_quote(char):
+            return "key"
+        return "invalid"
+
+    @staticmethod
+    def read_colon(char: str) -> str:
+        """Require the colon between a key and a value."""
+        return "value" if JsonChecker.is_colon(char) else "invalid"
+
+    @staticmethod
+    def read_value(char: str, expected_type: str | None = None) -> str:
+        """Choose a primitive parser compatible with the expected type."""
+        if JsonStringParser.is_quote(char):
+            return (
+                "string_value" if expected_type in (None, "string")
+                else "invalid"
+            )
+        if JsonNumberParser.is_number_start(char):
+            return (
+                "number_value" if expected_type in (None, "number", "integer")
+                else "invalid"
+            )
+        if JsonBooleanParser.is_boolean_start(char):
+            return (
+                "boolean_value" if expected_type in (None, "boolean")
+                else "invalid"
+            )
+        return "invalid"
+
+    @staticmethod
+    def read_after_value(char: str) -> str:
+        """Accept either a comma or a closing brace."""
+        if JsonChecker.is_comma(char):
+            return "key_required"
+        if JsonChecker.is_close_brace(char):
+            return "done"
+        return "invalid"
+
+    @staticmethod
+    def read_done(char: str) -> str:
+        """Reject additional text after the closing brace."""
+        return "invalid"
+
+    def next_state(
+        self, state: str, char: str, expected_type: str | None = None,
+    ) -> str:
+        """Dispatch structure states and typed value openings."""
+        if state == "start":
+            return self.read_start(char)
+        if state == "key_or_end":
+            return self.read_key_or_end(char)
+        if state == "key_required":
+            return self.read_key_required(char)
+        if state == "colon":
+            return self.read_colon(char)
+        if state == "value":
+            return self.read_value(char, expected_type)
+        if state == "after_value":
+            return self.read_after_value(char)
+        if state == "done":
+            return self.read_done(char)
+        return "invalid"
 
     def status(self, text: str) -> int:
-        """Return 0 if valid, -1 if incomplete, -2 if invalid."""
+        """Return 0 complete, -1 valid prefix, -2 invalid."""
         state = "start"
-        value = ""
+        string_parser = JsonStringParser()
+        number_parser = JsonNumberParser()
+        boolean_parser = JsonBooleanParser()
+        key_buffer = ""
         current_key = ""
         used_keys: set[str] = set()
-        required_keys = set(self.parameters)
 
         for t in text:
-            if state in (
-                "start", "key_or_end", "key_required",
-                "colon", "value", "after_value", "done",
-            ) and t in " \t\r\n":
+            if self.can_skip_whitespace(state, t):
                 continue
 
-            if state == "start":
-                if t == "{":
-                    state = "key_or_end"
-                else:
-                    return -2
-
-            elif state == "key_or_end":
-                if t == "}":
-                    if used_keys != required_keys:
-                        return -2
-                    state = "done"
-                elif t == '"' and used_keys != required_keys:
-                    value = '"'
-                    state = "key"
-                else:
-                    return -2
-
-            elif state == "key_required":
-                if t == '"' and used_keys != required_keys:
-                    value = '"'
-                    state = "key"
-                else:
-                    return -2
-
-            elif state == "key":
-                value += t
-                result = self.check_string(value)
+            if state in ("key", "string_value"):
+                result = string_parser.read(t)
                 if result == -2:
                     return -2
-                if result == 0:
-                    current_key = json.loads(value)
-                    if current_key not in self.parameters:
-                        return -2
-                    if current_key in used_keys:
-                        return -2
-                    used_keys.add(current_key)
-                    state = "colon"
-                elif not self.check_key_prefix(value, used_keys):
-                    return -2
+                if state == "key":
+                    if result == -1:
+                        key_buffer += t
+                    else:
+                        try:
+                            key = json.loads('"' + key_buffer + '"')
+                        except json.JSONDecodeError:
+                            return -2
+                        if not self.is_expected_key(key, used_keys):
+                            return -2
+                        current_key = key
+                        used_keys.add(key)
+                        state = "colon"
+                elif result == 0:
+                    state = "after_value"
+                continue
 
-            elif state == "colon":
-                if t == ":":
-                    state = "value"
-                else:
-                    return -2
-
-            elif state == "value":
-                value = t
-                type_name = self.parameters[current_key]
-                if type_name == "string" and t == '"':
-                    state = "string_value"
-                elif type_name in ("number", "integer") and (
-                    t == "-" or t in "0123456789"
-                ):
-                    state = "number_value"
-                elif type_name == "boolean" and t in "tf":
-                    state = "boolean_value"
-                else:
-                    return -2
-
-            elif state == "string_value":
-                value += t
-                result = self.check_string(value)
+            if state in ("number_value", "boolean_value"):
+                parser = (
+                    number_parser if state == "number_value"
+                    else boolean_parser
+                )
+                result = parser.read(t)
                 if result == -2:
                     return -2
                 if result == 0:
                     state = "after_value"
-
-            elif state in ("number_value", "boolean_value"):
-                if t in " \t\r\n,}":
-                    result = self.check_value(
-                        value, self.parameters[current_key],
-                    )
-                    if result != 0:
-                        return -2
-                    if t == "}":
-                        if used_keys != required_keys:
+                    if not self.is_whitespace(t):
+                        if not self.is_structure_allowed(
+                            state, t, used_keys,
+                        ):
                             return -2
-                        state = "done"
-                    elif t == ",":
-                        if used_keys == required_keys:
-                            return -2
-                        state = "key_required"
-                    else:
-                        state = "after_value"
-                else:
-                    value += t
-                    if self.check_value(
-                        value, self.parameters[current_key],
-                    ) == -2:
-                        return -2
-
-            elif state == "after_value":
-                if t == "}":
-                    if used_keys != required_keys:
-                        return -2
-                    state = "done"
-                elif t == "," and used_keys != required_keys:
-                    state = "key_required"
-                else:
+                        state = self.read_after_value(t)
+                if state == "invalid":
                     return -2
+                continue
 
-            else:
+            if not self.is_structure_allowed(state, t, used_keys):
                 return -2
+            expected_type = None
+            if state == "value":
+                expected_type = self.parameters[current_key]
+            state = self.next_state(state, t, expected_type)
+            if state == "invalid":
+                return -2
+            if state in ("key", "string_value"):
+                string_parser = JsonStringParser()
+                string_parser.read(t)
+                if state == "key":
+                    key_buffer = ""
+            elif state == "number_value":
+                number_parser = JsonNumberParser(
+                    integer_only=expected_type == "integer",
+                )
+                number_parser.read(t)
+            elif state == "boolean_value":
+                boolean_parser = JsonBooleanParser()
+                boolean_parser.read(t)
 
         return 0 if state == "done" else -1
 
     def check_string(self, value: str) -> int:
-        """Check a JSON string prefix including quotes and escapes."""
-        state = "start"
-        unicode_count = 0
-
+        """Check a string prefix using the string parser."""
+        parser = JsonStringParser()
         for t in value:
-            if state == "start":
-                if t != '"':
-                    return -2
-                state = "string"
-
-            elif state == "string":
-                if t == '"':
-                    state = "done"
-                elif t == "\\":
-                    state = "escape"
-                elif ord(t) < 32:
-                    return -2
-
-            elif state == "escape":
-                if t in '"\\/bfnrt':
-                    state = "string"
-                elif t == "u":
-                    unicode_count = 0
-                    state = "unicode"
-                else:
-                    return -2
-
-            elif state == "unicode":
-                if t not in "0123456789abcdefABCDEF":
-                    return -2
-                unicode_count += 1
-                if unicode_count == 4:
-                    state = "string"
-
-            else:
+            result = parser.read(t)
+            if result == -2:
                 return -2
-
-        return 0 if state == "done" else -1
+        return 0 if parser.state == "done" else -1
 
     def check_number(self, value: str) -> int:
-        """Check a JSON number prefix including decimals and exponents."""
-        state = "start"
-
+        """Check a number prefix using the number parser."""
+        parser = JsonNumberParser()
         for t in value:
-            if state == "start":
-                if t == "-":
-                    state = "sign"
-                elif t == "0":
-                    state = "zero"
-                elif t in "123456789":
-                    state = "integer"
-                else:
-                    return -2
-
-            elif state == "sign":
-                if t == "0":
-                    state = "zero"
-                elif t in "123456789":
-                    state = "integer"
-                else:
-                    return -2
-
-            elif state in ("zero", "integer"):
-                if state == "integer" and t in "0123456789":
-                    continue
-                if t == ".":
-                    state = "fraction_start"
-                elif t in "eE":
-                    state = "exponent_start"
-                else:
-                    return -2
-
-            elif state == "fraction_start":
-                if t not in "0123456789":
-                    return -2
-                state = "fraction"
-
-            elif state == "fraction":
-                if t in "0123456789":
-                    continue
-                if t in "eE":
-                    state = "exponent_start"
-                else:
-                    return -2
-
-            elif state == "exponent_start":
-                if t in "+-":
-                    state = "exponent_sign"
-                elif t in "0123456789":
-                    state = "exponent_digits"
-                else:
-                    return -2
-
-            elif state == "exponent_sign":
-                if t not in "0123456789":
-                    return -2
-                state = "exponent_digits"
-
-            elif state == "exponent_digits":
-                if t not in "0123456789":
-                    return -2
-
-        if state in ("zero", "integer", "fraction", "exponent_digits"):
-            return 0
-        return -1
+            if parser.read(t) == -2:
+                return -2
+        return 0 if parser.can_finish() else -1
 
     def check_boolean(self, value: str) -> int:
-        """Check true and false prefixes."""
-        if value in ("true", "false"):
+        """Check a boolean prefix using the boolean parser."""
+        parser = JsonBooleanParser()
+        for t in value:
+            if parser.read(t) == -2:
+                return -2
+        if parser.expected and parser.position == len(parser.expected):
             return 0
-        if "true".startswith(value) or "false".startswith(value):
-            return -1
-        return -2
+        return -1
