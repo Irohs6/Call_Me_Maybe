@@ -1,6 +1,10 @@
 """Read JSON object, string and number syntax one character at a time."""
 
+import json
+
 from pydantic import BaseModel
+
+from .model.models import Type
 
 
 class JsonStringParser(BaseModel):
@@ -94,6 +98,7 @@ class JsonNumberParser(BaseModel):
     """Parse one JSON number, keeping its numeric state."""
 
     state: str = "start"
+    integer_only: bool = False
 
     @staticmethod
     def is_negative_sign(char: str) -> bool:
@@ -158,7 +163,9 @@ class JsonNumberParser(BaseModel):
         return -1
 
     def read_zero(self, char: str) -> int:
-        """Prevent leading zeros and accept decimals or exponents."""
+        """Prevent leading zeros and accept allowed numeric suffixes."""
+        if self.integer_only:
+            return -2
         if self.is_decimal_point(char):
             self.state = "fraction_start"
         elif self.is_exponent(char):
@@ -168,9 +175,11 @@ class JsonNumberParser(BaseModel):
         return -1
 
     def read_integer(self, char: str) -> int:
-        """Read the integer digits."""
+        """Read digits and allow fractions only for number fields."""
         if self.is_digit(char):
             return -1
+        if self.integer_only:
+            return -2
         if self.is_decimal_point(char):
             self.state = "fraction_start"
         elif self.is_exponent(char):
@@ -308,7 +317,9 @@ class JsonBooleanParser(BaseModel):
 
 
 class JsonGrammar(BaseModel):
-    """Check JSON objects with string keys and primitive values."""
+    """Validate a JSON object prefix against optional required parameters."""
+
+    parameters: dict[str, Type] | None = None
 
     @staticmethod
     def is_whitespace(char: str) -> bool:
@@ -316,7 +327,7 @@ class JsonGrammar(BaseModel):
         return char in (" ", "\t", "\r", "\n")
 
     def can_skip_whitespace(self, state: str, char: str) -> bool:
-        """Skip whitespace only outside strings."""
+        """Skip whitespace only outside strings and numeric tokens."""
         return (
             state in (
                 "start", "key_or_end", "key_required", "colon",
@@ -325,14 +336,66 @@ class JsonGrammar(BaseModel):
             and self.is_whitespace(char)
         )
 
+    def has_remaining_keys(self, used_keys: set[str]) -> bool:
+        """Check whether another required key can be written."""
+        return (
+            self.parameters is None
+            or len(used_keys) < len(self.parameters)
+        )
+
+    def can_close_object(self, used_keys: set[str]) -> bool:
+        """Close an object only once every required key was written."""
+        return (
+            self.parameters is None
+            or used_keys == set(self.parameters)
+        )
+
+    def is_expected_key(self, key: str, used_keys: set[str]) -> bool:
+        """Reject unknown or repeated parameter names."""
+        return (
+            self.parameters is None
+            or (key in self.parameters and key not in used_keys)
+        )
+
+    def is_possible_key(self, raw: str, used_keys: set[str]) -> bool:
+        """Reject string prefixes no remaining parameter can complete."""
+        if self.parameters is None:
+            return True
+        try:
+            prefix = json.loads('"' + raw + '"')
+        except json.JSONDecodeError:
+            return True
+        if any(0xD800 <= ord(char) <= 0xDFFF for char in prefix):
+            return True
+        return any(
+            name.startswith(prefix)
+            for name in self.parameters
+            if name not in used_keys
+        )
+
+    def is_structure_allowed(
+        self,
+        state: str,
+        char: str,
+        used_keys: set[str],
+    ) -> bool:
+        """Check whether commas, keys and closing braces are allowed."""
+        if state in ("key_or_end", "after_value") and char == "}":
+            return self.can_close_object(used_keys)
+        if state == "after_value" and char == ",":
+            return self.has_remaining_keys(used_keys)
+        if state in ("key_or_end", "key_required") and char == '"':
+            return self.has_remaining_keys(used_keys)
+        return True
+
     @staticmethod
     def read_start(char: str) -> str:
-        """Expect the opening brace."""
+        """Require an opening brace."""
         return "key_or_end" if char == "{" else "invalid"
 
     @staticmethod
     def read_key_or_end(char: str) -> str:
-        """Allow the first key or an empty object."""
+        """Read the first key or an empty object."""
         if char == "}":
             return "done"
         if JsonStringParser.is_quote(char):
@@ -348,23 +411,32 @@ class JsonGrammar(BaseModel):
 
     @staticmethod
     def read_colon(char: str) -> str:
-        """Require a colon before a value."""
+        """Require the colon between a key and a value."""
         return "value" if char == ":" else "invalid"
 
     @staticmethod
-    def read_value(char: str) -> str:
-        """Begin a string, number or boolean value."""
+    def read_value(char: str, expected_type: str | None = None) -> str:
+        """Choose a primitive parser compatible with the expected type."""
         if JsonStringParser.is_quote(char):
-            return "string_value"
+            return (
+                "string_value" if expected_type in (None, "string")
+                else "invalid"
+            )
         if JsonNumberParser.is_number_start(char):
-            return "number_value"
+            return (
+                "number_value" if expected_type in (None, "number", "integer")
+                else "invalid"
+            )
         if JsonBooleanParser.is_boolean_start(char):
-            return "boolean_value"
+            return (
+                "boolean_value" if expected_type in (None, "boolean")
+                else "invalid"
+            )
         return "invalid"
 
     @staticmethod
     def read_after_value(char: str) -> str:
-        """Accept a comma or close the object."""
+        """Accept either a comma or a closing brace."""
         if char == ",":
             return "key_required"
         if char == "}":
@@ -373,11 +445,13 @@ class JsonGrammar(BaseModel):
 
     @staticmethod
     def read_done(char: str) -> str:
-        """Forbid any non-whitespace after the closing brace."""
+        """Reject additional text after the closing brace."""
         return "invalid"
 
-    def next_state(self, state: str, char: str) -> str:
-        """Dispatch only the JSON object structure."""
+    def next_state(
+        self, state: str, char: str, expected_type: str | None = None,
+    ) -> str:
+        """Dispatch structure states and typed value openings."""
         if state == "start":
             return self.read_start(char)
         if state == "key_or_end":
@@ -387,7 +461,7 @@ class JsonGrammar(BaseModel):
         if state == "colon":
             return self.read_colon(char)
         if state == "value":
-            return self.read_value(char)
+            return self.read_value(char, expected_type)
         if state == "after_value":
             return self.read_after_value(char)
         if state == "done":
@@ -395,11 +469,14 @@ class JsonGrammar(BaseModel):
         return "invalid"
 
     def status(self, text: str) -> int:
-        """Return 0 complete, -1 incomplete, -2 invalid."""
+        """Return 0 complete, -1 valid prefix, -2 invalid."""
         state = "start"
         string_parser = JsonStringParser()
         number_parser = JsonNumberParser()
         boolean_parser = JsonBooleanParser()
+        key_buffer = ""
+        current_key = ""
+        used_keys: set[str] = set()
 
         for char in text:
             if self.can_skip_whitespace(state, char):
@@ -409,10 +486,23 @@ class JsonGrammar(BaseModel):
                 result = string_parser.read(char)
                 if result == -2:
                     return -2
-                if result == 0:
-                    state = (
-                        "colon" if state == "key" else "after_value"
-                    )
+                if state == "key":
+                    if result == -1:
+                        key_buffer += char
+                        if not self.is_possible_key(key_buffer, used_keys):
+                            return -2
+                    else:
+                        try:
+                            key = json.loads('"' + key_buffer + '"')
+                        except json.JSONDecodeError:
+                            return -2
+                        if not self.is_expected_key(key, used_keys):
+                            return -2
+                        current_key = key
+                        used_keys.add(key)
+                        state = "colon"
+                elif result == 0:
+                    state = "after_value"
                 continue
 
             if state in ("number_value", "boolean_value"):
@@ -426,19 +516,32 @@ class JsonGrammar(BaseModel):
                 if result == 0:
                     state = "after_value"
                     if not self.is_whitespace(char):
+                        if not self.is_structure_allowed(
+                            state, char, used_keys,
+                        ):
+                            return -2
                         state = self.read_after_value(char)
                 if state == "invalid":
                     return -2
                 continue
 
-            state = self.next_state(state, char)
+            if not self.is_structure_allowed(state, char, used_keys):
+                return -2
+            expected_type = None
+            if state == "value" and self.parameters is not None:
+                expected_type = self.parameters[current_key].type
+            state = self.next_state(state, char, expected_type)
             if state == "invalid":
                 return -2
             if state in ("key", "string_value"):
                 string_parser = JsonStringParser()
                 string_parser.read(char)
+                if state == "key":
+                    key_buffer = ""
             elif state == "number_value":
-                number_parser = JsonNumberParser()
+                number_parser = JsonNumberParser(
+                    integer_only=expected_type == "integer",
+                )
                 number_parser.read(char)
             elif state == "boolean_value":
                 boolean_parser = JsonBooleanParser()
