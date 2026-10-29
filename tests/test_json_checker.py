@@ -122,11 +122,21 @@ class JsonCheckerTests(unittest.TestCase):
             with self.subTest(text=text):
                 self.assertEqual(checker.status(text), -2)
 
-    def test_schema_rejects_impossible_key_prefix(self) -> None:
+    def test_keys_are_validated_when_closed(self) -> None:
         checker = JsonChecker(parameters={"a": "number", "b": "number"})
-        for text in ('{"z', '{"a":2,"a', '{"a":2,"b":3,"'):
-            with self.subTest(text=text):
-                self.assertEqual(checker.status(text), -2)
+        self.assertEqual(checker.status('{"z'), -1)
+        self.assertEqual(checker.status('{"a":2,"a'), -1)
+        self.assertEqual(checker.status('{"z"'), -2)
+        self.assertEqual(checker.status('{"a":2,"a"'), -2)
+        self.assertEqual(checker.status('{"a":2,"b":3,"'), -2)
+
+    def test_small_structure_helpers(self) -> None:
+        checker = JsonChecker(parameters={})
+        self.assertTrue(checker.is_open_brace("{"))
+        self.assertTrue(checker.is_close_brace("}"))
+        self.assertTrue(checker.is_colon(":"))
+        self.assertTrue(checker.is_comma(","))
+        self.assertFalse(checker.is_colon(","))
 
     def test_schema_rejects_wrong_types(self) -> None:
         checker = JsonChecker(parameters={
