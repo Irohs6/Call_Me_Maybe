@@ -4,11 +4,11 @@ version = "0.1.0"
 description = "Function calling with constrained decoding for small language models"
 requires-python = ">=3.10"
 dependencies = [
-    "huggingface-hub>=0.20.0",
+    "llm_sdk",
     "numpy",
     "pydantic",
-    "torch>=2.0.0",
-    "transformers>=4.40.0",
+    "mypy",
+    "flake8",
 ]
 
 [tool.uv.sources]

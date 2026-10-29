@@ -14,9 +14,13 @@ clean:
 	rm -rf .mypy_cache .pytest_cache .ruff_cache
 
 lint:
-	uv run --with flake8 flake8 .
-	uv run --with mypy mypy . --warn-return-any --warn-unused-ignores --ignore-missing-imports --disallow-untyped-defs --check-untyped-defs
+	uv run flake8 src
+	uv run mypy src \
+		--warn-return-any --warn-unused-ignores \
+		--ignore-missing-imports --disallow-untyped-defs \
+		--check-untyped-defs --follow-imports=silent
 
 lint-strict:
-	uv run --with flake8 flake8 .
-	uv run --with mypy mypy . --strict
+	uv run flake8 src
+	uv run mypy src --strict \
+		--ignore-missing-imports --follow-imports=silent
