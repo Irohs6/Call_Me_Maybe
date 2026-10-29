@@ -1,51 +1,55 @@
+"""Command-line entry point for function calling."""
+
+import json
+import os
+import sys
 from argparse import ArgumentParser
 from pathlib import Path
-import sys
+from typing import TextIO
 
-from .argument_generator import ArgumentGenerator
-from .model.app import Application
-from .model.context_builder import ContextBuilder
-from .function_selector import FunctionSelector
-from .model.models import FunctionCall
-from llm_sdk import Small_LLM_Model
-import json
 
-GREEN = "\033[92m"
-CYAN = "\033[96m"
-YELLOW = "\033[93m"
-RESET = "\033[0m"
+def colored(text: str, code: str, stream: TextIO) -> str:
+    """Use terminal colors only when supported."""
+    if stream.isatty() and "NO_COLOR" not in os.environ:
+        return f"\033[{code}m{text}\033[0m"
+    return text
+
+
+def print_error(message: str) -> None:
+    """Display one readable error without an automatic traceback."""
+    print(f"{colored('Error:', '31', sys.stderr)} {message}",
+          file=sys.stderr)
 
 
 def main() -> int:
     parser = ArgumentParser()
-
     parser.add_argument(
         "--functions_definition",
         type=Path,
-        default=Path(
-            "data/input/functions_definition.json"
-        ),
+        default=Path("data/input/functions_definition.json"),
     )
-
     parser.add_argument(
         "--input",
         type=Path,
-        default=Path(
-            "data/input/function_calling_tests.json"
-        ),
+        default=Path("data/input/function_calling_tests.json"),
     )
-
     parser.add_argument(
         "--output",
         type=Path,
-        default=Path(
-            "data/output/function_calls.json"
-        ),
+        default=Path("data/output/function_calls.json"),
     )
-
     args = parser.parse_args()
 
     try:
+        # Keep SDK imports inside the handler: missing dependencies must
+        # produce a readable error rather than a startup traceback.
+        from .argument_generator import ArgumentGenerator
+        from .function_selector import FunctionSelector
+        from .model.app import Application
+        from .model.context_builder import ContextBuilder
+        from .model.models import FunctionCall
+        from llm_sdk import Small_LLM_Model
+
         app = Application(
             functions_path=args.functions_definition,
             input_path=args.input,
@@ -53,44 +57,59 @@ def main() -> int:
         )
         app.run()
 
-        context_builder = ContextBuilder(
-            functions=app.functions
-        )
-
+        context_builder = ContextBuilder(functions=app.functions)
         model = Small_LLM_Model()
-
         function_selector = FunctionSelector(
             model=model,
             functions=app.functions,
         )
-        argument_generator = ArgumentGenerator(
-            model=model,
-        )
+        argument_generator = ArgumentGenerator(model=model)
 
-        results = []
+        results: list[FunctionCall] = []
         for i, prompt in enumerate(app.prompts, start=1):
-            context = context_builder.build_function_selection_context(prompt)
+            try:
+                context = context_builder.build_function_selection_context(
+                    prompt
+                )
+                selected_function = function_selector.select(context)
+                parameters = argument_generator.generate(
+                    prompt, selected_function,
+                )
+                results.append(FunctionCall(
+                    prompt=prompt.prompt,
+                    name=selected_function.name,
+                    parameters=parameters,
+                ))
+            except Exception as error:
+                raise RuntimeError(f"Prompt #{i}: {error}") from error
 
-            selected_function = function_selector.select(context)
-            parameters = argument_generator.generate(
-                prompt,
-                selected_function,
-            )
-            function_call = FunctionCall(
-                prompt=prompt.prompt,
-                name=selected_function.name,
-                parameters=parameters
-            )
-            results.append(function_call)
         output = [result.model_dump(mode="json") for result in results]
-        args.output.parent.mkdir(parents=True, exist_ok=True)
-        with args.output.open("w", encoding="utf-8") as file:
-            json.dump(output, file, indent=4)
-        print(f"{CYAN}Dict answer final:{RESET} {output}")
+        try:
+            args.output.parent.mkdir(parents=True, exist_ok=True)
+            with args.output.open("w", encoding="utf-8") as file:
+                json.dump(output, file, indent=4)
+        except OSError as error:
+            raise OSError(
+                f"Cannot write output '{args.output}': {error}"
+            ) from error
+
+        print(f"{colored('Result:', '32', sys.stdout)} {output}")
         return 0
+    except ModuleNotFoundError as error:
+        print_error(
+            f"Missing Python module '{error.name}'. "
+            "Check the SDK dependencies in pyproject.toml and run uv sync."
+        )
+    except ImportError as error:
+        print_error(f"Cannot import a required module: {error}")
+    except (ValueError, OSError, RuntimeError) as error:
+        print_error(str(error))
+    except KeyboardInterrupt:
+        print_error("Execution interrupted")
+        return 130
     except Exception as error:
-        print(f"Error: {error}", file=sys.stderr)
-        return 1
+        print_error(f"Unexpected {type(error).__name__}: {error}")
+    return 1
 
 
 if __name__ == "__main__":
