@@ -12,7 +12,7 @@ from unittest.mock import patch
 from pydantic import ValidationError
 
 from src.__main__ import main
-from src.model.models import Function
+from src.model.models import Function, FunctionCall
 from src.model.parser import JsonParser
 
 
@@ -92,6 +92,14 @@ class InputValidationTests(unittest.TestCase):
         self.save([])
         with self.assertRaisesRegex(ValueError, "No functions"):
             JsonParser().load_functions(self.path)
+
+    def test_strict_output_rejects_infinity(self) -> None:
+        result = FunctionCall(
+            prompt="Test", name="fn_test",
+            parameters={"value": float("inf")},
+        )
+        with self.assertRaises(ValueError):
+            json.dumps([result.model_dump(mode="python")], allow_nan=False)
 
     def test_invalid_json_is_reported(self) -> None:
         self.path.write_text("[", encoding="utf-8")
