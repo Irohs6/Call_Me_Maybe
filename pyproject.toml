@@ -21,3 +21,7 @@ torch = { index = "pytorch-cpu" }
 name = "pytorch-cpu"
 url = "https://download.pytorch.org/whl/cpu"
 explicit = true
+
+[tool.mypy]
+# Exclude supplied SDK and personal audit notes from project-wide checks.
+exclude = ["^llm_sdk/", "^docs/"]
