@@ -1,113 +1,188 @@
-*This project has been created as part of the 42 curriculum by <login1>, <login2>, <login3>.*
+*This project has been created as part of the 42 curriculum by gacattan.*
 
 # Call Me Maybe
 
 ## Description
 
-Call Me Maybe is a Python function-calling project based on the Qwen3-0.6B language model and the provided `llm_sdk`. It reads natural-language requests and function definitions, chooses a suitable function, and extracts its typed arguments. The application writes one JSON output file with the original prompt, function name and parameters.
+**Call Me Maybe** is a Python function-calling project using **Qwen/Qwen3-0.6B** through the provided `llm_sdk`. Given natural-language prompts and a JSON file describing available functions, the program selects the appropriate function and generates its arguments.
 
-**Project status:** Work in progress. Function-name selection and argument generation both use token-level constraints. Argument generation ranks vocabulary tokens by model logits and selects the first whose decoded prefix is accepted by `JsonChecker`. The implementation still requires end-to-end Qwen accuracy and speed benchmarks. The `test-json-structure-methods` branch continues the original `JsonChecker` implementation. `JsonChecker` handles object structure and required keys/types. The three small parsers (`JsonStringParser`, `JsonNumberParser`, `JsonBooleanParser`) are in the **same `src/json_checker.py` file**, with explicit state methods such as `read_start` and `read_string`. Pass a mapping such as `JsonChecker(parameters={name: definition.type for name, definition in function.parameters.items()})`. `ArgumentGenerator` now uses it to filter generated token candidates.
+The goal is to produce **schema-compliant JSON through constrained decoding**, rather than relying on the model to spontaneously output valid JSON.
+
+The program writes one JSON array containing the original prompt, the selected function name, and its arguments. The implementation supports `string`, `number`, `integer`, and `boolean` parameters.
 
 ## Instructions
 
-Requires Python 3.10+ and [uv](https://docs.astral.sh/uv/).
+### Requirements and installation
 
-Install the dependencies:
+- Python 3.10 or later
+- [uv](https://docs.astral.sh/uv/)
+- The provided `llm_sdk` package and its model dependencies
+
+From the repository root:
 
 ```bash
+uv sync
+# or
 make install
-# or: uv sync
 ```
 
-Run with the default input files:
+The first model run may need to download Qwen model files.
+
+### Run
 
 ```bash
+uv run python -m src
+# or
 make run
-# or: uv run python -m src
 ```
 
-Provide alternative input/output paths:
+Default files:
+
+- Functions: `data/input/functions_definition.json`
+- Prompts: `data/input/function_calling_tests.json`
+- Output: `data/output/function_calls.json`
+
+Use custom file paths:
 
 ```bash
 uv run python -m src \
-  --functions_definition data/input/functions_definition.json \
-  --input data/input/function_calling_tests.json \
-  --output data/output/function_calls.json
+  --functions_definition path/to/functions.json \
+  --input path/to/prompts.json \
+  --output path/to/result.json
 ```
 
-The output file defaults to `data/output/function_calls.json`. It is created by the program.
+The application creates the parent directory for the output when needed.
 
-Other Makefile targets: `make debug`, `make clean`, `make lint` and optional `make lint-strict`. The lint target runs flake8 and mypy with the flags required by the subject. Lint dependencies are installed transiently with `uv run --with`; `uv sync` remains the runtime setup.
+Other Makefile targets are `make debug`, `make clean`, `make lint`, and `make lint-strict`.
 
 ## Algorithm
 
-1. Read function definitions and prompts as JSON, then validate input objects with Pydantic.
-2. Build the Qwen/Hermes function-selection context listing the available function schemas.
-3. Encode available function names and choose the next token among their allowed token-ID prefixes, using the logits returned by the SDK.
-4. Build a separate context for the selected function's arguments. Rank vocabulary token IDs by logits, reject candidates for which `JsonChecker.status()` returns `-2`, and stop when the status becomes `0`. Validate the resulting arguments once more before output.
-5. Produce a `FunctionCall` object and serialize all results into one JSON array.
+The implementation separates **function selection** from **argument generation**, using a shared LLM instance.
 
-**Constrained decoding:** `ArgumentGenerator` loads the model vocabulary using the SDK, considers token IDs in descending logit order, decodes each candidate with the SDK, and uses `JsonChecker.status()` to reject invalid JSON/schema prefixes before selecting the token. Complete objects are parsed with `json.loads()` and checked against the schema.
+### 1. Read and validate inputs
+
+`JsonParser` loads both JSON files, validates their contents using Pydantic, and rejects malformed JSON, duplicate object keys, duplicate function names, missing files, and unsupported argument types. Validation errors identify the affected function or prompt.
+
+### 2. Select a function with constrained decoding
+
+`ContextBuilder` constructs a Qwen/Hermes-style context containing the available function definitions and the user request.
+
+`FunctionSelector` encodes the available function names (including a terminating newline) and uses the LLM logits to select only token IDs that can continue one of those names. After each selection, incompatible function candidates are removed. The completed token sequence identifies the chosen function.
+
+Function selection is **model-driven**; it does not use hardcoded function-name rules or keyword matching.
+
+### 3. Generate all arguments as one JSON object
+
+`ContextBuilder.build_argument_context()` prepares a context for the selected function and all its parameters.
+
+`ArgumentGenerator` reads the vocabulary file exposed by the SDK and caches the token IDs. On each generation step, it:
+
+1. Requests logits from the LLM.
+2. Considers vocabulary tokens in descending score order.
+3. Decodes a candidate continuation and calls `JsonChecker.status()`.
+4. Rejects a token when it would make the JSON prefix invalid.
+5. Accepts a valid continuation, or parses and validates a complete JSON object.
+
+The JSON checker returns:
+
+| Status | Meaning |
+|---|---|
+| `-2` | Invalid prefix |
+| `-1` | Valid but incomplete prefix |
+| `0` | Complete object |
+
+`JsonChecker` is a state-machine-based JSON prefix parser. It delegates string, number, and boolean parsing to `JsonStringParser`, `JsonNumberParser`, and `JsonBooleanParser`, all located in `src/json_checker.py`. It handles JSON structure, required parameter names, duplicate or unknown keys, escape sequences, Unicode `\uXXXX` escapes, numeric syntax, and the expected primitive types.
+
+The generator validates the final object again: it must contain exactly the required keys and values of the expected types. Non-finite numbers are rejected; if a completed candidate is invalid, generation can try the next candidate. Argument generation is limited to **256 generated tokens** per non-empty argument object.
+
+### 4. Write the result
+
+`FunctionCall` models the output structure. The CLI writes a single JSON array, using strict JSON serialization (`allow_nan=False`). Errors are reported with a readable message and a nonzero exit status.
 
 ## Design decisions
 
-- `ContextBuilder` assembles the language-model prompts.
-- `FunctionSelector` selects only among the provided function names.
-- `ArgumentGenerator` handles the parameters in one generation pass.
-- `JsonChecker.status()` keeps `for t in text` and delegates structure transitions to small `read_*` methods and `is_*` character checks; `JsonStringParser`, `JsonNumberParser` and `JsonBooleanParser` keep their value states. The `check_string`, `check_number` and `check_boolean` helpers also remain available.
-- Pydantic models validate input and output structures. The `Small_LLM_Model` wrapper is used through its public methods.
+- **No hardcoded function logic:** the same selection and generation pipeline handles function definitions supplied at runtime.
+- **One argument generation pass:** numbers, strings, integers, and booleans are generated together in a schema-constrained JSON object.
+- **Dedicated state machine:** the JSON checker handles incomplete prefixes during generation rather than checking syntax only at the end.
+- **Pydantic for data models:** input structure and output fields are represented with explicit Python models.
+- **SDK public methods only:** the code uses the provided model wrapper instead of accessing its internal implementation.
+- **Cached vocabulary IDs:** avoid reloading the same vocabulary for every prompt.
+- **Explicit error handling:** invalid inputs and generation failures produce diagnostic messages.
 
 ## Example usage
 
-Example natural-language request:
+For the request:
 
 ```text
 What is the sum of 2 and 3?
 ```
 
-Expected output shape (illustrative, not a recorded model result):
+An expected output entry looks like this:
 
 ```json
 [
   {
     "prompt": "What is the sum of 2 and 3?",
     "name": "fn_add_numbers",
-    "parameters": {"a": 2.0, "b": 3.0}
+    "parameters": {
+      "a": 2.0,
+      "b": 3.0
+    }
   }
 ]
 ```
 
+This is an illustrative output format, not a claim about a separate benchmark.
+
 ## Testing strategy
 
-Run the JSON checker unit tests:
+Run all unit tests:
 
 ```bash
-uv run python -m unittest discover -s tests
+uv run python -m unittest discover -s tests -v
 ```
 
-Run `make lint` for style and static type checks. Then execute the model against the supplied example inputs and additional, changed function sets. Inspect each output file for valid JSON, exact required keys, schema-compatible parameter types and correct extracted values. Include string escapes, Unicode, missing files, malformed input, empty strings, negative and decimal numbers, boolean values and ambiguous prompts in manual tests.
+Run the repository's lint targets:
 
-**Current limitation:** Passing mocked-model and checker tests does not establish end-to-end Qwen accuracy, tokenization correctness for partial UTF-8 bytes, or compliance with the five-minute performance target.
+```bash
+make lint
+make lint-strict
+```
+
+**Latest reported local checks:**
+
+- **46/46 unit tests passed** (`unittest`, 0.029 seconds).
+- **Flake8 passed** on `src`.
+- **Mypy strict passed** on all 10 source files under `src`, using the flags configured in the Makefile.
+
+The tests cover the JSON prefix checker, argument generation with a simulated model, function-selection failure cases, duplicate JSON keys, input validation, error handling, and rejection of non-finite numeric arguments.
+
+Unit tests with a mocked model validate structural behavior; they do not replace real Qwen tests. End-to-end evaluation should also cover changed function definitions, multiple parameters, booleans, Unicode, quoted strings, escaped characters, long values, and malformed input files.
 
 ## Performance analysis
 
-The subject targets at least 90% correct function selection and argument extraction, 100% parseable schema-compliant JSON, and under five minutes for the complete evaluation prompt set. These targets have **not been benchmarked for this branch**. Each generated token requires a model logits call; full-vocabulary prefix checks may add overhead. Timing and accuracy should be measured using the final integrated implementation.
+The subject sets targets of **90% or better correct function selection and argument extraction**, **100% parseable schema-compliant JSON**, and **less than five minutes for the evaluated prompt set**.
 
-## Challenges
+In one reported local Qwen run, **11 prompts were processed in approximately 3 minutes 29 seconds**, with **11/11 expected outputs matched** for that particular test set. This measurement is specific to those prompts, functions, hardware, and model setup; it does not establish accuracy or timing on a different evaluation set.
 
-- Qwen tokens can span multiple text characters, and UTF-8 characters may be split across tokens.
-- JSON escapes such as `\u0041` must be accepted as incomplete prefixes until all four hexadecimal digits are present.
-- JSON numbers require a separator to finish; `JsonChecker` handles this inside the original state machine.
-- The argument generator now filters invalid tokens during generation; post-generation validation remains a safety check. Full-model behavior and five-minute target must still be verified.
+The implementation caches vocabulary IDs and filters invalid token candidates before accepting them. Its cost still depends on model inference, the number and length of generated tokens, and how many candidate prefixes must be checked. No general speedup or accuracy result is claimed without comparative measurements.
+
+## Challenges faced
+
+- **Constrained function selection:** tokenized function names can share prefixes; the selector must preserve only continuations belonging to the available functions.
+- **Incomplete JSON during generation:** a valid prefix is not necessarily a complete document; the checker distinguishes incomplete, invalid, and complete states.
+- **Strings and escapes:** JSON quotes, backslashes, control characters, and `\uXXXX` sequences need dedicated parsing states.
+- **Typed numbers:** JSON number syntax includes signs, decimals, and exponents. The generator also rejects values that cannot be represented as finite numbers.
+- **Tokenization:** a decoded token can represent multiple characters, while some Unicode characters may require multiple tokens. Partial UTF-8 decoding remains a case requiring additional real-tokenizer testing.
+- **Runtime and reliability:** vocabulary caching, candidate filtering, input validation, and error messages were added to reduce repeated work and make failures understandable.
 
 ## Resources
 
 - [42 Call Me Maybe subject](docs/subject_en.md)
-- [Qwen3-0.6B model](https://huggingface.co/Qwen/Qwen3-0.6B)
+- [Qwen/Qwen3-0.6B](https://huggingface.co/Qwen/Qwen3-0.6B)
 - [Python JSON documentation](https://docs.python.org/3/library/json.html)
 - [Pydantic documentation](https://docs.pydantic.dev/latest/)
 - [uv documentation](https://docs.astral.sh/uv/)
+- [Python unittest documentation](https://docs.python.org/3/library/unittest.html)
 
-**AI use:** ChatGPT assisted with design discussion, explanations of token-level constrained decoding and JSON escape handling, code review, and drafting parser test cases. Generated suggestions must be reviewed and verified by the project contributors.
-
-**Before submission:** Replace the contributor login placeholders on the first line with the actual 42 logins.
+**AI usage:** ChatGPT was used for design discussions, explanations of constrained decoding and JSON parsing, review of edge cases, assistance with test cases, and documentation. Implementation choices and generated suggestions were reviewed and tested against the project requirements.
