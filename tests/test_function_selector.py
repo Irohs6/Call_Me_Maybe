@@ -62,6 +62,44 @@ class FunctionSelectorTests(unittest.TestCase):
         self.assertEqual(selector.select("context").name, "fn_test")
         model.get_logits_from_input_ids.assert_not_called()
 
+    def test_function_names_are_encoded_once_across_prompts(self) -> None:
+        encoded = {
+            "first prompt": [98],
+            "second prompt": [99],
+            "fn_add_numbers\n": [3, 7, 21],
+            "fn_add_strings\n": [3, 7, 22],
+        }
+        logits = [0.0] * 23
+        logits[22] = 10.0
+        model = self.model_with_tokens(encoded, logits)
+        selector = FunctionSelector.model_construct(
+            model=model,
+            functions=[
+                self.function("fn_add_numbers"),
+                self.function("fn_add_strings"),
+            ],
+        )
+
+        self.assertEqual(
+            selector.select("first prompt").name, "fn_add_strings",
+        )
+        self.assertEqual(
+            selector.select("second prompt").name, "fn_add_strings",
+        )
+        encoded_texts = [
+            item.args[0] for item in model.encode.call_args_list
+        ]
+        self.assertEqual(
+            encoded_texts,
+            [
+                "first prompt", "fn_add_numbers\n",
+                "fn_add_strings\n", "second prompt",
+            ],
+        )
+        self.assertEqual(
+            model.get_logits_from_input_ids.call_count, 2,
+        )
+
     def test_shared_prefix_only_scores_the_branch(self) -> None:
         encoded = {
             "context": [99],
