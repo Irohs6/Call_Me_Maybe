@@ -28,9 +28,9 @@ def show_progress(completed: int, total: int) -> None:
     width = 20
     filled = width * completed // total
     bar = "#" * filled + "-" * (width - filled)
-    ending = "\\n" if completed == total else ""
+    ending = "\n" if completed == total else ""
     print(
-        f"\\rGenerating [{bar}] {completed}/{total}",
+        f"\rGenerating [{bar}] {completed}/{total}",
         end=ending,
         file=sys.stderr,
         flush=True,
