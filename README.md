@@ -51,7 +51,7 @@ uv run python -m src \
   --output path/to/result.json
 ```
 
-The application creates the parent directory for the output when needed.
+The application creates the parent directory for the output when needed. When run in an interactive terminal, it displays a per-prompt progress bar on stderr; the generated function calls are saved to the JSON file, not printed to stdout.
 
 Other Makefile targets are `make debug`, `make clean`, `make lint`, and `make lint-strict`.
 
@@ -106,7 +106,8 @@ The generator validates the final object again: it must contain exactly the requ
 - **Dedicated state machine:** the JSON checker handles incomplete prefixes during generation rather than checking syntax only at the end.
 - **Pydantic for data models:** input structure and output fields are represented with explicit Python models.
 - **SDK public methods only:** the code uses the provided model wrapper instead of accessing its internal implementation.
-- **Cached vocabulary IDs:** avoid reloading the same vocabulary for every prompt.
+- **Cached vocabulary and function-name IDs:** avoid reloading the vocabulary and re-encoding names for each prompt.
+- **Forced-token selection:** skip the LLM inference when function selection has only one allowed next token.
 - **Explicit error handling:** invalid inputs and generation failures produce diagnostic messages.
 
 ## Example usage
@@ -151,7 +152,7 @@ make lint-strict
 
 **Latest reported local checks:**
 
-- **46/46 unit tests passed** (`unittest`, 0.029 seconds).
+- **49/49 unit tests passed** in the last reported local run (`unittest`, 0.038 seconds), before adding two progress-display tests. The updated suite should be run again after this change.
 - **Flake8 passed** on `src`.
 - **Mypy strict passed** on all 10 source files under `src`, using the flags configured in the Makefile.
 
@@ -163,7 +164,7 @@ Unit tests with a mocked model validate structural behavior; they do not replace
 
 The subject sets targets of **90% or better correct function selection and argument extraction**, **100% parseable schema-compliant JSON**, and **less than five minutes for the evaluated prompt set**.
 
-In one reported local Qwen run, **11 prompts were processed in approximately 3 minutes 29 seconds**, with **11/11 expected outputs matched** for that particular test set. This measurement is specific to those prompts, functions, hardware, and model setup; it does not establish accuracy or timing on a different evaluation set.
+In one reported local Qwen run, **11 prompts were processed in approximately 3 minutes 29 seconds**, with **11/11 expected outputs matched** for that particular five-function test set. Subsequent CPU runs on the same five-function inputs took approximately 2 minutes 17–30 seconds after function-selection optimizations. In a separate six-function, 11-prompt test, the program took approximately 2 minutes 25 seconds, but one generated template omitted the quotes around a literal word. This is a remaining semantic-accuracy limitation, not a JSON-syntax error. This measurement is specific to those prompts, functions, hardware, and model setup; it does not establish accuracy or timing on a different evaluation set.
 
 The implementation caches vocabulary IDs and filters invalid token candidates before accepting them. Its cost still depends on model inference, the number and length of generated tokens, and how many candidate prefixes must be checked. No general speedup or accuracy result is claimed without comparative measurements.
 
