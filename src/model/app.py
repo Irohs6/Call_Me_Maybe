@@ -26,4 +26,3 @@ class Application(BaseModel):
         self.prompts = parser.load_prompts(
             self.input_path
         )
-
