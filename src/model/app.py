@@ -24,15 +24,3 @@ class Application(BaseModel):
             self.input_path
         )
 
-        self._display_loaded_data(
-            self.functions,
-            self.prompts,
-        )
-
-    def _display_loaded_data(
-        self,
-        functions: list[Function],
-        prompts: list[Prompt],
-    ) -> None:
-        print(f"Functions: {len(functions)}")
-        print(f"Prompts: {len(prompts)}")
