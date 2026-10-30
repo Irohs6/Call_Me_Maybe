@@ -102,8 +102,8 @@ def main() -> int:
     print(f"Cached fixed fragments: {len(cached_ids)}")
     if mismatches:
         print("MISMATCH: do not enable segmented encoding.")
-        for mismatch in mismatches[:5]:
-            print(" -", mismatch)
+        for detail in mismatches[:5]:
+            print(" -", detail)
         return 1
     print("All token ID sequences are identical on these inputs.")
     print("These times measure encoding, NOT LLM inference or total runtime.")
