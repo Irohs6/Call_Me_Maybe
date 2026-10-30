@@ -21,6 +21,6 @@ lint:
 		--check-untyped-defs --follow-imports=silent
 
 lint-strict:
-	uv run flake8 src
-	uv run mypy src --strict \
+	uv run flake8 .
+	uv run mypy . --strict \
 		--ignore-missing-imports --follow-imports=silent
