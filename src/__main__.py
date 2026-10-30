@@ -21,6 +21,22 @@ def print_error(message: str) -> None:
           file=sys.stderr)
 
 
+def show_progress(completed: int, total: int) -> None:
+    """Show completed prompts only in interactive terminals."""
+    if total == 0 or not sys.stderr.isatty():
+        return
+    width = 20
+    filled = width * completed // total
+    bar = "#" * filled + "-" * (width - filled)
+    ending = "\\n" if completed == total else ""
+    print(
+        f"\\rGenerating [{bar}] {completed}/{total}",
+        end=ending,
+        file=sys.stderr,
+        flush=True,
+    )
+
+
 def main() -> int:
     parser = ArgumentParser()
     parser.add_argument(
@@ -66,6 +82,7 @@ def main() -> int:
         argument_generator = ArgumentGenerator(model=model)
 
         results: list[FunctionCall] = []
+        show_progress(0, len(app.prompts))
         for i, prompt in enumerate(app.prompts, start=1):
             try:
                 context = context_builder.build_function_selection_context(
@@ -81,7 +98,10 @@ def main() -> int:
                     parameters=parameters,
                 ))
             except Exception as error:
+                if sys.stderr.isatty():
+                    print(file=sys.stderr)
                 raise RuntimeError(f"Prompt #{i}: {error}") from error
+            show_progress(i, len(app.prompts))
 
         output = [result.model_dump(mode="python") for result in results]
         try:
@@ -93,7 +113,6 @@ def main() -> int:
                 f"Cannot write output '{args.output}': {error}"
             ) from error
 
-        print(f"{colored('Dict answer final:', '32', sys.stdout)} {output}")
         return 0
     except ModuleNotFoundError as error:
         print_error(
