@@ -152,7 +152,7 @@ make lint-strict
 
 **Latest reported local checks:**
 
-- **49/49 unit tests passed** in the last reported local run (`unittest`, 0.038 seconds), before adding two progress-display tests. The updated suite should be run again after this change.
+- **51/51 unit tests passed** in the latest reported local run (`unittest`, 0.038 seconds). Three new vocabulary-file error tests have since been added and need a local rerun.
 - **Flake8 passed** on `src`.
 - **Mypy strict passed** on all 10 source files under `src`, using the flags configured in the Makefile.
 
