@@ -23,5 +23,5 @@ url = "https://download.pytorch.org/whl/cpu"
 explicit = true
 
 [tool.mypy]
-# Exclude supplied SDK and personal audit notes from project-wide checks.
-exclude = ["^llm_sdk/", "^docs/"]
+# Exclude the provided SDK from checks of project code.
+exclude = ["^llm_sdk/"]
