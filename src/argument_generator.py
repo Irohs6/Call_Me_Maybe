@@ -23,11 +23,22 @@ class ArgumentGenerator(BaseModel):
     def vocabulary_ids(self) -> tuple[int, ...]:
         """Load and reuse the model vocabulary across prompts."""
         if self._vocabulary_ids is None:
-            with open(
-                self.model.get_path_to_vocab_file(),
-                encoding="utf-8",
-            ) as file:
-                vocabulary = json.load(file)
+            path = self.model.get_path_to_vocab_file()
+            try:
+                with open(path, encoding="utf-8") as file:
+                    vocabulary = json.load(file)
+            except json.JSONDecodeError as error:
+                raise ValueError(
+                    f"Invalid vocabulary JSON in '{path}': {error}"
+                ) from error
+            except UnicodeDecodeError as error:
+                raise ValueError(
+                    f"Invalid UTF-8 vocabulary file: '{path}'"
+                ) from error
+            except OSError as error:
+                raise OSError(
+                    f"Cannot read vocabulary file '{path}': {error}"
+                ) from error
 
             if not isinstance(vocabulary, dict):
                 raise ValueError("The vocabulary must be a JSON object")
