@@ -3,12 +3,16 @@ from typing import Any
 
 
 class Type(BaseModel):
+    """Describe the JSON type of a function parameter or return."""
+
     model_config = ConfigDict(extra="forbid")
 
     type: str
 
 
 class Function(BaseModel):
+    """Describe an available function and its parameter schema."""
+
     model_config = ConfigDict(extra="forbid")
 
     name: str = Field(min_length=1, description="The name of the function")
@@ -35,12 +39,16 @@ class Function(BaseModel):
 
 
 class Prompt(BaseModel):
+    """Represent a natural-language function-calling request."""
+
     model_config = ConfigDict(extra="forbid")
 
     prompt: str = Field(min_length=1, description="The prompt text")
 
 
 class FunctionCall(BaseModel):
+    """Represent one function call in the output JSON array."""
+
     model_config = ConfigDict(extra="forbid")
 
     prompt: str
