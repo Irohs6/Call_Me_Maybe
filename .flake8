@@ -1,0 +1,9 @@
+[flake8]
+# The SDK is supplied third-party code; docs/ contains personal audit scripts.
+exclude =
+    .git,
+    .venv,
+    .mypy_cache,
+    .pytest_cache,
+    llm_sdk,
+    docs
