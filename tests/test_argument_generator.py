@@ -153,7 +153,7 @@ class ArgumentGeneratorTests(unittest.TestCase):
     def test_invalid_vocabulary_utf8_has_clear_error(self) -> None:
         model = self.make_model(tokens={0: "x"}, scores=[[10]])
         path = Path(model.get_path_to_vocab_file())
-        path.write_bytes(b"\\xff")
+        path.write_bytes(b"\xff")
         generator = ArgumentGenerator.model_construct(model=model)
 
         with self.assertRaisesRegex(
