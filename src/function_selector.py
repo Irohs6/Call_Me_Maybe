@@ -68,16 +68,21 @@ class FunctionSelector(BaseModel):
                     "No function can continue constrained decoding"
                 )
 
-            logits = self.model.get_logits_from_input_ids(
-                context_ids + generated_ids
-            )
-            if any(token_id < 0 or token_id >= len(logits)
-                   for token_id in allowed_ids):
-                raise ValueError("Function token ID outside model vocabulary")
-            next_token_id = max(
-                allowed_ids,
-                key=lambda token_id: logits[token_id],
-            )
+            if len(allowed_ids) == 1:
+                next_token_id = allowed_ids[0]
+            else:
+                logits = self.model.get_logits_from_input_ids(
+                    context_ids + generated_ids
+                )
+                if any(token_id < 0 or token_id >= len(logits)
+                       for token_id in allowed_ids):
+                    raise ValueError(
+                        "Function token ID outside model vocabulary"
+                    )
+                next_token_id = max(
+                    allowed_ids,
+                    key=lambda token_id: logits[token_id],
+                )
             generated_ids.append(next_token_id)
 
             candidates = {
