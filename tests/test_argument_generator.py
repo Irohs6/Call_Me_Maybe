@@ -139,6 +139,39 @@ class ArgumentGeneratorTests(unittest.TestCase):
         self.assertEqual(first, second)
         model.get_path_to_vocab_file.assert_called_once()
 
+    def test_invalid_vocabulary_json_has_clear_error(self) -> None:
+        model = self.make_model(tokens={0: "x"}, scores=[[10]])
+        path = Path(model.get_path_to_vocab_file())
+        path.write_text("{", encoding="utf-8")
+        generator = ArgumentGenerator.model_construct(model=model)
+
+        with self.assertRaisesRegex(
+            ValueError, "Invalid vocabulary JSON"
+        ):
+            generator.vocabulary_ids()
+
+    def test_invalid_vocabulary_utf8_has_clear_error(self) -> None:
+        model = self.make_model(tokens={0: "x"}, scores=[[10]])
+        path = Path(model.get_path_to_vocab_file())
+        path.write_bytes(b"\\xff")
+        generator = ArgumentGenerator.model_construct(model=model)
+
+        with self.assertRaisesRegex(
+            ValueError, "Invalid UTF-8 vocabulary file"
+        ):
+            generator.vocabulary_ids()
+
+    def test_missing_vocabulary_file_has_clear_error(self) -> None:
+        model = self.make_model(tokens={0: "x"}, scores=[[10]])
+        path = Path(model.get_path_to_vocab_file())
+        path.unlink()
+        generator = ArgumentGenerator.model_construct(model=model)
+
+        with self.assertRaisesRegex(
+            OSError, "Cannot read vocabulary file"
+        ):
+            generator.vocabulary_ids()
+
     def test_non_finite_logits_are_skipped(self) -> None:
         model = self.make_model(
             tokens={0: '"count":1}', 1: '"count":2}'},
