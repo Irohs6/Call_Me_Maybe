@@ -11,7 +11,7 @@ from unittest.mock import patch
 
 from pydantic import ValidationError
 
-from src.__main__ import main
+from src.__main__ import main, show_progress
 from src.model.models import Function, FunctionCall
 from src.model.parser import JsonParser
 
@@ -105,6 +105,27 @@ class InputValidationTests(unittest.TestCase):
         self.path.write_text("[", encoding="utf-8")
         with self.assertRaisesRegex(ValueError, "line 1, column 2"):
             JsonParser().load_functions(self.path)
+
+    def test_progress_bar_is_interactive_only(self) -> None:
+        output = io.StringIO()
+        with patch.object(output, "isatty", return_value=True):
+            with redirect_stderr(output):
+                show_progress(0, 4)
+                show_progress(2, 4)
+                show_progress(4, 4)
+        text = output.getvalue()
+        self.assertIn("Generating [--------------------] 0/4", text)
+        self.assertIn("Generating [##########----------] 2/4", text)
+        self.assertTrue(
+            text.endswith("Generating [####################] 4/4\n")
+        )
+
+    def test_progress_bar_is_silent_without_terminal(self) -> None:
+        output = io.StringIO()
+        with redirect_stderr(output):
+            show_progress(1, 4)
+            show_progress(0, 0)
+        self.assertEqual(output.getvalue(), "")
 
     def test_runtime_errors_return_failure_exit_code(self) -> None:
         output = io.StringIO()
