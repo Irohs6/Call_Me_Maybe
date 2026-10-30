@@ -38,6 +38,7 @@ def show_progress(completed: int, total: int) -> None:
 
 
 def main() -> int:
+    """Run the command-line function-calling pipeline."""
     parser = ArgumentParser()
     parser.add_argument(
         "--functions_definition",
