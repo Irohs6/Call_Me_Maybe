@@ -3,7 +3,7 @@
 from collections.abc import Iterable
 
 from llm_sdk import Small_LLM_Model
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, PrivateAttr
 
 from .model.models import Function
 
@@ -15,6 +15,7 @@ class FunctionSelector(BaseModel):
 
     model: Small_LLM_Model
     functions: list[Function]
+    _function_tokens: dict[str, list[int]] | None = PrivateAttr(default=None)
 
     @staticmethod
     def allowed_ids_for_position(
@@ -37,13 +38,15 @@ class FunctionSelector(BaseModel):
     def token_function_available(
         self,
     ) -> dict[str, list[int]]:
-        """Encode available function names."""
-        return {
-            function.name: self.model.encode(
-                function.name + '\n'
-            )[0].tolist()
-            for function in self.functions
-        }
+        """Encode function names once and reuse their token sequences."""
+        if self._function_tokens is None:
+            self._function_tokens = {
+                function.name: self.model.encode(
+                    function.name + '\n'
+                )[0].tolist()
+                for function in self.functions
+            }
+        return self._function_tokens
 
     def select(
         self,
