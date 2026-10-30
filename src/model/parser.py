@@ -9,8 +9,12 @@ from .models import Function, Prompt
 
 
 class JsonParser(BaseModel):
+    """Read JSON files and validate their expected Pydantic schemas."""
+
     @staticmethod
-    def _unique_keys(parameters: list[tuple[str, object]]) -> dict[str, object]:
+    def _unique_keys(
+        parameters: list[tuple[str, object]],
+    ) -> dict[str, object]:
         """Reject repeated keys before JSON objects become dictionaries."""
         values: dict[str, object] = {}
         for key, value in parameters:
